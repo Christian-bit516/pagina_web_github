@@ -1,264 +1,75 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mascarilla profesional — Mesh + Landmarks (MediaPipe)</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Malla Facial Profesional</title>
   <style>
-    :root{color-scheme:dark light}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#0b1220;color:#e5e7eb;display:flex;flex-direction:column;min-height:100vh}
-    header{padding:.9rem 1rem;background:#0f172a;border-bottom:1px solid #111827;display:flex;align-items:center;gap:.75rem}
-    h1{margin:0;font-size:1.05rem}
-    .status{margin-left:auto;font-weight:700;color:#93c5fd}
-    main{flex:1;display:flex;flex-direction:column;align-items:center;padding:1rem}
-    .stage{position:relative;width:min(100%,980px);max-width:980px;aspect-ratio:4/3;border-radius:12px;overflow:hidden;border:1px solid #1f2937;background:#000}
-    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);} /* espejo para selfie */
-    canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-    .controls{width:min(980px,100%);display:flex;gap:.5rem;justify-content:center;margin-top:1rem;flex-wrap:wrap}
-    .btn{padding:.6rem 1rem;border-radius:10px;border:0;font-weight:700;cursor:pointer;background:#2563eb;color:white}
-    .btn.secondary{background:#374151}
-    label{display:flex;align-items:center;gap:.4rem;color:#cbd5e1}
-    .small{font-size:.9rem;color:#94a3b8}
+    body { margin: 0; display: flex; flex-direction: column; align-items: center; background: #111827; color: #fff; }
+    canvas { position: absolute; left: 0; top: 0; }
+    video { display: none; }
+    header { padding: 1rem; font-size: 1.2rem; font-weight: bold; }
+    .stage { position: relative; width: 100%; max-width: 800px; }
   </style>
-
-  <!-- MediaPipe Face Mesh libs -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Mascarilla profesional — Triangulación (MediaPipe FaceMesh)</h1>
-    <div class="status" id="status">Cargando librerías…</div>
-  </header>
-
-  <main>
-    <div class="stage" role="application" aria-label="Video stage">
-      <video id="video" playsinline muted></video>
-      <canvas id="overlay"></canvas>
-    </div>
-
-    <div class="controls">
-      <button id="startBtn" class="btn">Iniciar cámara</button>
-      <button id="stopBtn" class="btn secondary" disabled>Detener</button>
-      <label><input id="showMesh" type="checkbox" checked/> Mostrar mesh</label>
-      <label><input id="showPoints" type="checkbox" checked/> Mostrar puntos</label>
-      <label class="small">Opacidad: <input id="maskOpacity" type="range" min="0.05" max="0.9" step="0.05" value="0.45"/></label>
-    </div>
-  </main>
+  <header>Detección de Rostro con Malla Profesional</header>
+  <div class="stage">
+    <video id="video" playsinline></video>
+    <canvas id="output"></canvas>
+  </div>
 
   <script>
-    // --- Helper: convex hull (Monotone chain) para polygonar la parte inferior de la cara ---
-    function convexHull(points) {
-      // points: [{x,y}, ...] return hull CCW
-      if (points.length <= 3) return points.slice();
-      points = points.slice().sort((a,b) => a.x === b.x ? a.y - b.y : a.x - b.x);
-      const cross = (o,a,b) => (a.x - o.x)*(b.y - o.y) - (a.y - o.y)*(b.x - o.x);
-      const lower = [];
-      for (const p of points) {
-        while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-        lower.push(p);
-      }
-      const upper = [];
-      for (let i = points.length-1; i >= 0; --i) {
-        const p = points[i];
-        while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-        upper.push(p);
-      }
-      upper.pop(); lower.pop();
-      return lower.concat(upper);
+    const videoElement = document.getElementById("video");
+    const canvasElement = document.getElementById("output");
+    const ctx = canvasElement.getContext("2d");
+
+    function resizeCanvas() {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
     }
 
-    (function(){
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('overlay');
-      const ctx = canvas.getContext('2d');
-      const statusEl = document.getElementById('status');
-      const startBtn = document.getElementById('startBtn');
-      const stopBtn = document.getElementById('stopBtn');
-      const showMeshChk = document.getElementById('showMesh');
-      const showPointsChk = document.getElementById('showPoints');
-      const maskOpacity = document.getElementById('maskOpacity');
+    const faceMesh = new FaceMesh({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
 
-      let camera = null;
-      let faceMesh = null;
-      let active = false;
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
 
-      function resizeCanvasToVideo() {
-        const dpr = window.devicePixelRatio || 1;
-        const w = video.videoWidth || video.clientWidth || 640;
-        const h = video.videoHeight || video.clientHeight || 480;
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
-        canvas.style.width = `${video.clientWidth || w}px`;
-        canvas.style.height = `${video.clientHeight || h}px`;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    faceMesh.onResults((results) => {
+      if (!results.multiFaceLandmarks) return;
+
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      for (const landmarks of results.multiFaceLandmarks) {
+        // Dibujar malla triangular
+        drawConnectors(ctx, landmarks, FACEMESH_TESSELATION,
+          { color: "#00FF00", lineWidth: 0.5 });
+        // Dibujar puntos amarillos
+        drawLandmarks(ctx, landmarks, { color: "yellow", radius: 1.5 });
       }
+    });
 
-      async function setupFaceMesh() {
-        faceMesh = new FaceMesh({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
+    // Activa la cámara
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480
+    });
 
-        faceMesh.setOptions({
-          maxNumFaces: 1,
-          refineLandmarks: true,
-          selfieMode: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-
-        faceMesh.onResults(onResults);
-      }
-
-      async function startCamera() {
-        startBtn.disabled = true;
-        statusEl.textContent = 'Iniciando cámara...';
-        try {
-          camera = new Camera(video, {
-            onFrame: async () => { await faceMesh.send({image: video}); },
-            width: 1280,
-            height: 720
-          });
-          await camera.start();
-          active = true;
-          stopBtn.disabled = false;
-          statusEl.textContent = 'Cámara activa';
-          resizeCanvasToVideo();
-        } catch (err) {
-          console.error(err);
-          statusEl.textContent = err?.name === 'NotAllowedError' ? 'Permiso denegado' : 'Error iniciando cámara';
-          startBtn.disabled = false;
-        }
-      }
-
-      function stopCamera() {
-        active = false;
-        if (camera) { camera.stop(); camera = null; }
-        ctx.setTransform(1,0,0,1,0,0);
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        stopBtn.disabled = true;
-        startBtn.disabled = false;
-        statusEl.textContent = 'Cámara detenida';
-      }
-
-      // Dibuja: mesh (triangulación), puntos y máscara rellenada (convex hull de la zona inferior)
-      function onResults(results) {
-        resizeCanvasToVideo();
-        ctx.save();
-        // reflejar canvas para coincidir con video espejo
-        const dpr = window.devicePixelRatio || 1;
-        ctx.translate(canvas.width / dpr, 0);
-        ctx.scale(-1, 1);
-
-        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
-
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          const landmarks = results.multiFaceLandmarks[0]; // 468 landmarks, normalized
-
-          const W = canvas.width / dpr;
-          const H = canvas.height / dpr;
-          // convertir a px
-          const pts = landmarks.map(p => ({ x: p.x * W, y: p.y * H }));
-
-          // 1) Dibujar la tesselación (triangulación) en amarillo (usa drawing_utils.FACEMESH_TESSELATION)
-          if (showMeshChk.checked) {
-            // drawing_utils.drawConnectors acepta: ctx, landmarks, connectorList
-            // MediaPipe exposes FACEMESH_TESSELATION and other constants
-            const opts = {color: '#facc15', lineWidth: 0.8}; // amarillo
-            // draw tesselation (triangulation lines)
-            // window.FACEMESH_TESSELATION es definido por drawing_utils export
-            drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, opts);
-          }
-
-          // 2) Dibujar puntos (pequeños círculos) en amarillo
-          if (showPointsChk.checked) {
-            ctx.fillStyle = '#facc15';
-            for (const p of pts) {
-              ctx.beginPath();
-              ctx.arc(p.x, p.y, 1.6, 0, Math.PI*2);
-              ctx.fill();
-            }
-          }
-
-          // 3) Dibujar máscara rellena basada en convex hull de la mitad inferior:
-          // Seleccionamos puntos que están por debajo de la nariz (landmark 1) y alrededor
-          const noseTip = pts[1];
-          // Recolectamos puntos cuyo y > noseTip.y (parte inferior) y que estén dentro del ancho facial razonable
-          const lower = pts.filter(p => p.y > noseTip.y - (H*0.02));
-          // También filtramos por coordenadas x entre mejillas 234 y 454 si existen:
-          const leftCheek = pts[234] || pts[127] || pts[100];
-          const rightCheek = pts[454] || pts[357] || pts[200];
-          const minX = Math.min(leftCheek.x, rightCheek.x) - 30;
-          const maxX = Math.max(leftCheek.x, rightCheek.x) + 30;
-          const lowerFiltered = lower.filter(p => p.x >= minX && p.x <= maxX);
-
-          // Si no hay suficientes puntos, fallback: tomar un rango de landmarks típicos del borde inferior (152 es mentón)
-          let hullPts = [];
-          if (lowerFiltered.length >= 10) {
-            hullPts = convexHull(lowerFiltered);
-          } else {
-            // fallback using approximate jawline indices (loop from 10..  200 ) - use known face contour indices slice
-            const jawIdx = [10, 109, 67, 106, 66, 105, 63, 70, 107, 334, 296, 293, 300, 293, 301, 291, 375, 321, 405, 314];
-            const fallback = jawIdx.map(i => pts[i]).filter(Boolean);
-            hullPts = convexHull(fallback);
-          }
-
-          if (hullPts && hullPts.length >= 3) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(hullPts[0].x, hullPts[0].y);
-            for (let i = 1; i < hullPts.length; i++) ctx.lineTo(hullPts[i].x, hullPts[i].y);
-            ctx.closePath();
-            ctx.globalAlpha = parseFloat(maskOpacity.value);
-            ctx.fillStyle = '#0ea5e9'; // azul profesional
-            ctx.fill();
-            // borde suave
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-            ctx.restore();
-          }
-
-          statusEl.textContent = 'Rostro detectado';
-        } else {
-          statusEl.textContent = 'Esperando rostro…';
-        }
-
-        ctx.restore();
-      }
-
-      // Iniciar todo
-      (async function init() {
-        await setupFaceMesh();
-        // drawConnectors etc are global; make sure drawing utils exported
-        statusEl.textContent = 'Listo — pulsa "Iniciar cámara"';
-      })();
-
-      // event bindings
-      startBtn.addEventListener('click', async () => {
-        if (!faceMesh) await setupFaceMesh();
-        await startCamera();
-      });
-      stopBtn.addEventListener('click', stopCamera);
-
-      // util wrapper: alias to drawing_utils functions if not in global scope
-      // drawing_utils exports: drawConnectors, drawLandmarks, FACEMESH_TESSELATION...
-      // In some setups they are global identifiers — if not, reference via window.
-      const drawConnectors = window.drawConnectors || window.drawingUtils?.drawConnectors || window.drawConnectors;
-      const FACEMESH_TESSELATION = window.FACEMESH_TESSELATION || window.drawingUtils?.FACEMESH_TESSELATION || window.FACEMESH_TESSELATION;
-
-      // If the constants aren't attached to window (rare), attempt to import from module (but CDN script does set these globally).
-      if (!drawConnectors || !FACEMESH_TESSELATION) {
-        console.warn('drawConnectors or FACEMESH_TESSELATION no están disponibles globalmente. Asegúrate de cargar drawing_utils correctamente.');
-      }
-
-      // resize handler for responsiveness
-      window.addEventListener('resize', () => { if (active) resizeCanvasToVideo(); });
-
-    })();
+    videoElement.onloadedmetadata = () => resizeCanvas();
+    camera.start();
   </script>
 </body>
 </html>
