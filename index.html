@@ -1,53 +1,430 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Emojis en Fondo Gris</title>
-  <style>
-    /* Contenedor gris centrado */
-    .emoji-container {
-      background-color: #cccccc;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 100%;
-      max-width: 400px;
-      height: 200px;
-      margin: 40px auto;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mascarilla AR — Profesional (Warping Triangular estable)</title>
+<style>
+  :root{--bg:#03050a;--panel:rgba(8,12,18,0.6);--accent:#00f0d0}
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,Roboto,Arial;color:#eaf8f4}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejo */
+  canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform:scaleX(-1)} 
+  .ui{position:fixed;left:12px;top:12px;z-index:80;background:var(--panel);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);backdrop-filter:blur(6px)}
+  .ui input[type=range]{width:180px}
+  .ui .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  button{padding:8px 12px;border-radius:8px;border:0;background:linear-gradient(90deg,#00f0d0,#00a6ff);color:#021616;font-weight:800;cursor:pointer}
+  button.secondary{background:#374151;color:white}
+  .status{position:fixed;right:12px;top:12px;background:rgba(0,0,0,0.45);padding:8px 10px;border-radius:8px;color:var(--accent);font-weight:700}
+  .hint{position:fixed;left:12px;bottom:12px;color:#9fb7b2;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
+  .centerMsg{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:90;background:rgba(0,0,0,0.45);padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);font-weight:700;color:#7ef0d6}
+</style>
 
-    /* Estilo común para los emojis */
-    .emoji {
-      font-size: 4rem;
-      margin: 0 1rem;
-      user-select: none;
-      transition: transform 0.2s ease;
-      cursor: default;
-    }
-
-    /* Colores individuales */
-    .happy {
-      color: #ffeb3b;
-    }
-    .angry {
-      color: #ff5722;
-    }
-
-    /* Pequeña animación al pasar el ratón */
-    .emoji:hover {
-      transform: scale(1.2);
-    }
-  </style>
+<!-- MediaPipe FaceMesh -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
-
-  <div class="emoji-container">
-    <span class="emoji happy">😊</span>
-    <span class="emoji angry">😠</span>
+  <div id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="canvas"></canvas>
   </div>
 
+  <div class="ui" role="toolbar" aria-label="Controles">
+    <div class="row">
+      <button id="startBtn">Iniciar Escaneo</button>
+      <button id="stopBtn" class="secondary" disabled>Detener</button>
+    </div>
+    <div style="font-size:13px;margin-bottom:6px">Ajustes máscara</div>
+    <div class="row"><label>Escala<input id="maskScale" type="range" min="0.7" max="1.6" step="0.01" value="1.0"/></label></div>
+    <div class="row"><label>X offset<input id="maskX" type="range" min="-0.25" max="0.25" step="0.005" value="0"/></label></div>
+    <div class="row"><label>Y offset<input id="maskY" type="range" min="-0.35" max="0.35" step="0.005" value="0"/></label></div>
+    <div class="row"><label>Opacidad<input id="maskAlpha" type="range" min="0.25" max="1" step="0.01" value="1"/></label></div>
+    <div class="row"><label><input id="showDebug" type="checkbox"/> Mostrar anchors (debug)</label></div>
+  </div>
+
+  <div class="status" id="status">Listo</div>
+  <div class="centerMsg" id="centerMsg">Pulsa "Iniciar Escaneo"</div>
+  <div class="hint">Sirve por HTTPS o usa <code>http://localhost</code> para cámara en móvil</div>
+
+<script>
+/* ---------------------------
+  Config + DOM
+----------------------------*/
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', {alpha:true});
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+const centerMsg = document.getElementById('centerMsg');
+
+const maskScaleEl = document.getElementById('maskScale');
+const maskXEl = document.getElementById('maskX');
+const maskYEl = document.getElementById('maskY');
+const maskAlphaEl = document.getElementById('maskAlpha');
+const showDebugEl = document.getElementById('showDebug');
+
+let camera = null;
+let faceMesh = null;
+let running = false;
+let dpr = window.devicePixelRatio || 1;
+let prevSmoothed = null;
+
+/* Anchors we will use from MediaPipe (robustos):
+   left cheek 234, right cheek 454, nose tip 1, chin 152
+*/
+const IDX = { left:234, right:454, nose:1, chin:152 };
+
+/* Mask PNG (transparent). Puedes reemplazar por tu png si prefieres */
+const MASK_PNG = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
+const maskImg = new Image();
+maskImg.crossOrigin = 'anonymous';
+maskImg.src = MASK_PNG;
+let maskLoaded = false;
+maskImg.onload = () => { maskLoaded = true; console.log('Mask loaded', maskImg.width, maskImg.height); };
+
+/* ---------------------------
+  Helpers
+----------------------------*/
+
+// resize canvas to video size (pixel-correct)
+function resizeCanvas() {
+  const vw = video.videoWidth || video.clientWidth || 640;
+  const vh = video.videoHeight || video.clientHeight || 480;
+  dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(vw * dpr);
+  canvas.height = Math.round(vh * dpr);
+  canvas.style.width = `${vw}px`;
+  canvas.style.height = `${vh}px`;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+
+// simple EMA smoothing of landmarks
+function smooth(prev, curr, alpha=0.72) {
+  if (!prev || prev.length !== curr.length) return curr.map(p => ({x:p.x,y:p.y,z:p.z||0}));
+  const out = [];
+  for (let i=0;i<curr.length;i++){
+    out.push({
+      x: prev[i].x*alpha + curr[i].x*(1-alpha),
+      y: prev[i].y*alpha + curr[i].y*(1-alpha),
+      z: (prev[i].z||0)*alpha + (curr[i].z||0)*(1-alpha)
+    });
+  }
+  return out;
+}
+
+// convert normalized landmarks to pixel coords
+function normToPixels(landmarks) {
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
+  return landmarks.map(pt => ({ x: pt.x * W, y: pt.y * H, z: (pt.z||0) * W }));
+}
+
+/* Solve affine transform from 3 src points (u,v) to 3 dst points (x,y)
+   Solve:
+     x = a*u + b*v + c
+     y = d*u + e*v + f
+   Returns matrix m = [a, b, c, d, e, f]
+*/
+function solveAffine(srcTri, dstTri) {
+  // srcTri, dstTri: arrays of 3 points {x,y}
+  // Build 6x6 system A * m = B
+  const A = [];
+  const B = [];
+  for (let i=0;i<3;i++){
+    const u = srcTri[i].x, v = srcTri[i].y;
+    const x = dstTri[i].x, y = dstTri[i].y;
+    A.push([u, v, 1, 0, 0, 0]);
+    A.push([0, 0, 0, u, v, 1]);
+    B.push(x);
+    B.push(y);
+  }
+  // Gaussian elimination for 6x6
+  const n = 6;
+  const M = [];
+  for (let i=0;i<n;i++){
+    M.push(A[i].slice());
+    M[i].push(B[i]);
+  }
+  for (let i=0;i<n;i++){
+    // pivot
+    let maxR = i;
+    for (let r=i+1;r<n;r++) if (Math.abs(M[r][i]) > Math.abs(M[maxR][i])) maxR = r;
+    if (Math.abs(M[maxR][i]) < 1e-12) continue;
+    if (maxR !== i) { const tmp = M[i]; M[i] = M[maxR]; M[maxR] = tmp; }
+    // normalize row
+    const piv = M[i][i];
+    for (let c=i;c<=n;c++) M[i][c] /= piv;
+    // eliminate
+    for (let r=0;r<n;r++){
+      if (r===i) continue;
+      const fac = M[r][i];
+      if (Math.abs(fac) < 1e-12) continue;
+      for (let c=i;c<=n;c++) M[r][c] -= fac * M[i][c];
+    }
+  }
+  const sol = [];
+  for (let i=0;i<n;i++) sol.push(M[i][n]);
+  // sol = [a,b,c,d,e,f]
+  return sol;
+}
+
+/* Draw one source triangle mapped to destination using canvas affine transform.
+   We compute affine M so that (u,v)->(x,y).
+   Canvas setTransform expects (a, b, c, d, e, f) mapping x' = a*x + c*y + e; y' = b*x + d*y + f
+   But our affine is x' = a*u + b*v + c; y' = d*u + e*v + f
+   So pass setTransform(a, d, b, e, c, f)? NO — canvas mapping uses first param (a) multiplies source x, second param (b) multiplies source x for y output.
+   To map: setTransform(a, d, b, e, c, f) will result in:
+     x' = a*u + b*v + c
+     y' = d*u + e*v + f
+*/
+function drawTriangleImage(img, srcTri, dstTri) {
+  // srcTri coords in image-space (pixels), dstTri in canvas-space (pixels)
+  // compute affine mapping from src->dst
+  const M = solveAffine(srcTri, dstTri); // [a,b,c,d,e,f]
+  ctx.save();
+  // clip to destination triangle
+  ctx.beginPath();
+  ctx.moveTo(dstTri[0].x, dstTri[0].y);
+  ctx.lineTo(dstTri[1].x, dstTri[1].y);
+  ctx.lineTo(dstTri[2].x, dstTri[2].y);
+  ctx.closePath();
+  ctx.clip();
+  // set transform so drawing the source image in its own coordinate system maps correctly
+  // setTransform(a, d, b, e, c, f)
+  ctx.setTransform(M[0], M[3], M[1], M[4], M[2], M[5]);
+  // draw image with origin at (0,0) in image coordinates
+  ctx.drawImage(img, 0, 0);
+  ctx.restore();
+}
+
+/* Fallback: draw mask with center/rotation/scale (if warping fails) */
+function drawMaskFallback(img, dstCenter, scale, angle, alpha=1.0) {
+  const w = img.width * scale;
+  const h = img.height * scale;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(dstCenter.x, dstCenter.y);
+  ctx.rotate(angle);
+  ctx.drawImage(img, -w/2, -h/2, w, h);
+  ctx.restore();
+}
+
+/* ---------------------------
+  FaceMesh init + handlers
+----------------------------*/
+async function initFaceMesh() {
+  faceMesh = new FaceMesh({
+    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+  });
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    selfieMode: true,
+    minDetectionConfidence: 0.55,
+    minTrackingConfidence: 0.55
+  });
+  faceMesh.onResults(onResults);
+}
+
+function toPixels(normPoints) {
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
+  return normPoints.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z||0) * W }));
+}
+
+function drawDebugAnchors(dst) {
+  if (!showDebugEl.checked) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,90,180,0.95)';
+  for (const k in dst) {
+    const p = dst[k];
+    if (!p) continue;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* Main per-frame results */
+function onResults(results) {
+  resizeCanvas();
+  ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
+
+  if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+    statusEl.textContent = 'Esperando rostro…';
+    centerMsg.textContent = 'Pulsa "Iniciar Escaneo"';
+    return;
+  }
+  statusEl.textContent = 'Rostro detectado';
+  centerMsg.textContent = 'Aplicando mascarilla…';
+
+  // normalized -> pixel coords (canvas)
+  const pixels = toPixels(results.multiFaceLandmarks[0]);
+  const smoothPts = smooth(prevSmoothed, pixels, 0.75);
+  prevSmoothed = smoothPts;
+
+  // anchors
+  const L = smoothPts[IDX.left];
+  const R = smoothPts[IDX.right];
+  const N = smoothPts[IDX.nose];
+  const C = smoothPts[IDX.chin];
+
+  if (!L || !R || !N || !C) {
+    // draw minimal wire so user sees recognition
+    drawMinimalWire(smoothPts);
+    return;
+  }
+
+  // compute center / face width / face height / angle
+  const centerX = (L.x + R.x) / 2;
+  const centerY = (L.y + R.y) / 2;
+  const faceW = Math.hypot(R.x - L.x, R.y - L.y);
+  const noseToChin = Math.hypot(C.x - N.x, C.y - N.y);
+  const angle = Math.atan2(R.y - L.y, R.x - L.x);
+
+  // compute destination triangles for left and right (pixel coords)
+  // top anchor slightly above nose, influenced by maskScale & y-offset
+  const scaleUI = parseFloat(maskScaleEl.value || 1.0);
+  const offX = parseFloat(maskXEl.value || 0.0) * faceW;
+  const offY = parseFloat(maskYEl.value || 0.0) * noseToChin;
+  const dstTop = { x: N.x + offX, y: N.y - noseToChin*0.36 + offY };
+
+  // compute left/right top points near cheeks (interpolate between cheek and top)
+  const leftTop = { x: L.x + (dstTop.x - L.x)*0.25, y: L.y + (dstTop.y - L.y)*0.25 };
+  const rightTop= { x: R.x + (dstTop.x - R.x)*0.25, y: R.y + (dstTop.y - R.y)*0.25 };
+  const leftBottom = { x: L.x + (C.x - L.x)*0.45, y: L.y + (C.y - L.y)*0.45 };
+  const rightBottom= { x: R.x + (C.x - R.x)*0.45, y: R.y + (C.y - R.y)*0.45 };
+
+  // apply slight scale outward from center to widen/narrow mask
+  function scalePoint(pt, cx, cy, s) { return { x: cx + (pt.x - cx)*s, y: cy + (pt.y - cy)*s }; }
+  const sFactor = scaleUI;
+  const dstA = [ scalePoint(leftTop, centerX, centerY, sFactor), scalePoint(dstTop, centerX, centerY, sFactor), scalePoint(leftBottom, centerX, centerY, sFactor) ];
+  const dstB = [ scalePoint(rightTop, centerX, centerY, sFactor), scalePoint(dstTop, centerX, centerY, sFactor), scalePoint(rightBottom, centerX, centerY, sFactor) ];
+
+  // src triangles on mask image (image-space)
+  // pick two symmetric triangles that cover mask
+  const sw = maskImg.width || 512;
+  const sh = maskImg.height || 256;
+  const srcA = [{x: sw*0.08, y: sh*0.25}, {x: sw*0.5, y: sh*0.10}, {x: sw*0.08, y: sh*0.86}];
+  const srcB = [{x: sw*0.92, y: sh*0.25}, {x: sw*0.5, y: sh*0.10}, {x: sw*0.92, y: sh*0.86}];
+
+  // attempt warping if mask loaded
+  try {
+    if (maskLoaded) {
+      ctx.save();
+      ctx.globalAlpha = parseFloat(maskAlphaEl.value || 1.0);
+      // draw left triangle
+      drawTriangleImage(maskImg, srcA, dstA);
+      // draw right triangle
+      drawTriangleImage(maskImg, srcB, dstB);
+      ctx.restore();
+    } else {
+      // fallback scaled & rotated
+      drawMaskFallback(maskImg, {x:centerX, y: N.y + (C.y - N.y)*0.45 }, faceW / maskImg.width * scaleUI, angle, parseFloat(maskAlphaEl.value || 1.0));
+    }
+  } catch (err) {
+    console.warn('Warp error, fallback', err);
+    // fallback
+    drawMaskFallback(maskImg, {x:centerX, y: N.y + (C.y - N.y)*0.45 }, faceW / (maskImg.width||256) * scaleUI, angle, parseFloat(maskAlphaEl.value || 1.0));
+  }
+
+  // optional debug anchors/puntos
+  drawDebugAnchors({ left: L, right: R, nose: N, chin: C });
+
+  // minimal wire so it's clear recognition is active
+  drawMinimalWire(smoothPts);
+}
+
+/* draw minimal wire and key points (keeps design clean but shows recognition) */
+function drawMinimalWire(pts) {
+  if (!pts) return;
+  ctx.save();
+  ctx.lineWidth = 0.9;
+  ctx.strokeStyle = 'rgba(110,240,217,0.92)';
+  ctx.shadowBlur = 6;
+  ctx.shadowColor = 'rgba(110,240,217,0.12)';
+
+  // jawline 0..16
+  ctx.beginPath();
+  for (let i=0;i<=16;i++){ const p = pts[i]; if(!p) continue; i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y); }
+  ctx.stroke();
+
+  // nose bridge
+  ctx.beginPath();
+  for (let i=1;i<=4;i++){ const p=pts[i]; if(!p) continue; i===1?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y); }
+  ctx.stroke();
+
+  // subtle mouth shape
+  const mouth = [61,146,91,181,84,17,314,405,321,375,291];
+  ctx.beginPath();
+  for (let i=0;i<mouth.length;i++){ const p=pts[mouth[i]]; if(!p) continue; i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y); }
+  ctx.closePath();
+  ctx.stroke();
+
+  // key dots
+  ctx.fillStyle = 'rgba(255,90,180,0.95)';
+  const keys = [IDX.nose, IDX.chin, IDX.left, IDX.right];
+  for (const k of keys){
+    const p = pts[k];
+    if (!p) continue;
+    ctx.beginPath(); ctx.arc(p.x,p.y,2.6,0,Math.PI*2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/* ---------------------------
+  Start/stop camera
+----------------------------*/
+async function startCamera() {
+  startBtn.disabled = true;
+  statusEl.textContent = 'Solicitando permiso de cámara...';
+  try {
+    if (!faceMesh) await initFaceMesh();
+    camera = new Camera(video, {
+      onFrame: async () => { await faceMesh.send({ image: video }); },
+      width: 960,
+      height: 720,
+      facingMode: 'user'
+    });
+    await camera.start();
+    running = true;
+    stopBtn.disabled = false;
+    statusEl.textContent = 'Cámara activa — escanea rostro';
+    centerMsg.textContent = 'Buscando rostro...';
+    video.addEventListener('loadedmetadata', () => resizeCanvas(), { once:true });
+  } catch (err) {
+    console.error('Error al iniciar cámara', err);
+    statusEl.textContent = 'Error cámara: ' + (err?.message || err);
+    startBtn.disabled = false;
+  }
+}
+
+function stopCamera() {
+  if (camera) { try{ camera.stop(); } catch(e){} camera = null; }
+  running = false;
+  prevSmoothed = null;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  statusEl.textContent = 'Detenido';
+  centerMsg.textContent = 'Pulsa "Iniciar Escaneo"';
+  ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
+}
+
+/* ---------------------------
+  Bind events
+----------------------------*/
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
+window.addEventListener('resize', () => { if (video && video.videoWidth) resizeCanvas(); });
+
+/* Initial UI state */
+statusEl.textContent = 'Listo';
+centerMsg.textContent = 'Pulsa "Iniciar Escaneo"';
+
+</script>
 </body>
 </html>
