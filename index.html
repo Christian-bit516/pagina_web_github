@@ -3,157 +3,225 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mascarilla Facial con Red Neuronal (face-api.js)</title>
+  <title>Mascarilla AR profesional con MediaPipe Face Mesh</title>
   <style>
-    body { margin: 0; font-family: sans-serif; background: #111827; color: #e5e7eb; }
-    header { padding: 1rem; background: #1f2937; color: #fff; text-align: center; }
-    .stage { position: relative; width: min(100%, 800px); margin: 1rem auto; aspect-ratio: 4 / 3; background: #000; }
-    video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-    canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    .controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem; }
-    .btn { padding: .5rem 1rem; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
-    .btn.start { background: #2563eb; color: #fff; }
-    .btn.stop { background: #6b7280; color: #fff; }
-    #status { margin-left: 1rem; font-weight: 600; }
+    :root { color-scheme: dark light; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu,Cantarell,Arial;background:#0b1120;color:#e5e7eb}
+    header{position:sticky;top:0;z-index:10;display:flex;gap:.75rem;align-items:center;padding:0.85rem 1rem;background:#0f172a;border-bottom:1px solid #1f2937}
+    h1{margin:0;font-size:clamp(1rem,2.2vw,1.3rem)}
+    .status{font-weight:700;font-variant-numeric:tabular-nums}
+    main{max-width:960px;margin:0 auto;padding:1rem}
+    .stage{position:relative;width:min(100%,820px);margin:0 auto;border:1px solid #1f2937;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3}
+    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejo para selfie */
+    canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;margin:1rem auto;max-width:820px}
+    .card{background:#0f172a;border:1px solid #1f2937;border-radius:14px;padding:.75rem}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+    .btn{appearance:none;border:0;border-radius:12px;padding:.7rem 1rem;font-weight:700;cursor:pointer;background:#2563eb;color:#fff;box-shadow:0 10px 20px rgba(37,99,235,.25)}
+    .btn.secondary{background:#374151;box-shadow:none}
+    .hint{opacity:.85;font-size:.9rem}
+    a{color:#93c5fd}
   </style>
-  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <!-- MediaPipe Face Mesh + utilidades de cámara -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <header>
-    <h1>Mascarilla Facial con Red Neuronal</h1>
-    <span id="status">Cargando modelos…</span>
+    <h1>Mascarilla AR con Face Mesh (468 landmarks)</h1>
+    <span class="status" id="status">Cargando…</span>
   </header>
 
   <main>
     <div class="stage">
-      <video id="video" autoplay muted playsinline></video>
+      <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
     <div class="controls">
-      <button id="startBtn" class="btn start">Iniciar cámara</button>
-      <button id="stopBtn" class="btn stop" disabled>Detener</button>
+      <div class="card row">
+        <button id="startBtn" class="btn">Iniciar cámara</button>
+        <button id="stopBtn" class="btn secondary" disabled>Detener</button>
+      </div>
+      <div class="card row">
+        <label class="row" style="gap:.5rem">
+          <input id="showLandmarks" type="checkbox" />
+          <span>Mostrar landmarks</span>
+        </label>
+        <label>Escala
+          <input id="scale" type="range" min="0.8" max="1.6" step="0.02" value="1.1" />
+        </label>
+        <label>Altura
+          <input id="height" type="range" min="0.9" max="2.0" step="0.02" value="1.35" />
+        </label>
+      </div>
+      <div class="card hint">
+        Consejo: usa <b>HTTPS</b> o <code>localhost</code> para que Android/iOS permitan la cámara. Iluminación frontal suave ayuda al seguimiento.
+      </div>
     </div>
   </main>
 
   <script>
-    class MascarillaFacial {
-      constructor() {
+    // PNG de mascarilla con transparencia (reemplazable por tu propia imagen)
+    // Opción 1 (quirúrgica azul):
+    const MASK_PNG_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
+    // Opción 2 (negra KN95):
+    // const MASK_PNG_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/kn95_black.png';
+
+    class ARMask {
+      constructor(){
         this.video = document.getElementById('video');
-        this.overlay = document.getElementById('overlay');
-        this.ctx = this.overlay.getContext('2d');
+        this.canvas = document.getElementById('overlay');
+        this.ctx = this.canvas.getContext('2d');
         this.status = document.getElementById('status');
-        this.startBtn = document.getElementById('startBtn');
-        this.stopBtn = document.getElementById('stopBtn');
+        this.btnStart = document.getElementById('startBtn');
+        this.btnStop = document.getElementById('stopBtn');
+        this.showLandmarks = document.getElementById('showLandmarks');
+        this.scaleInput = document.getElementById('scale');
+        this.heightInput = document.getElementById('height');
+
         this.isActive = false;
-        this.animationFrame = null;
-        this.models = 'https://justadudewhohacks.github.io/face-api.js/models';
-        this.initialize();
-        this.bindEvents();
+        this.camera = null;
+        this.maskImg = new Image();
+        this.maskImg.crossOrigin = 'anonymous';
+        this.maskImg.src = MASK_PNG_URL;
+        this.maskReady = false;
+        this.maskImg.onload = () => this.maskReady = true;
+
+        this.setup();
+        this.bind();
       }
 
-      async initialize() {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(this.models),
-          faceapi.nets.faceLandmark68Net.loadFromUri(this.models)
-        ]);
-        this.status.textContent = 'Modelos cargados';
+      setup(){
+        // Configurar FaceMesh
+        this.faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+        this.faceMesh.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true, // labios y ojos más finos
+          selfieMode: true,      // coords pensadas para selfie
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        this.faceMesh.onResults((results) => this.onResults(results));
+        this.status.textContent = 'Listo — pulsa Iniciar cámara';
       }
 
-      async startCamera() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-          this.video.srcObject = stream;
-          await this.video.play();
-          this.resizeOverlayToVideo();
+      bind(){
+        this.btnStart.addEventListener('click', () => this.start());
+        this.btnStop.addEventListener('click', () => this.stop());
+        window.addEventListener('resize', () => this.resize());
+      }
+
+      async start(){
+        try{
+          this.btnStart.disabled = true;
+          this.video.playsInline = true;
+          // CameraUtils gestiona getUserMedia y frames
+          this.camera = new Camera(this.video, {
+            onFrame: async () => { await this.faceMesh.send({ image: this.video }); },
+            width: 960,
+            height: 720,
+          });
+          await this.camera.start();
           this.isActive = true;
-          this.startBtn.disabled = true;
-          this.stopBtn.disabled = false;
+          this.btnStop.disabled = false;
           this.status.textContent = 'Cámara activa';
-          this.detectFaces();
-        } catch (err) {
-          this.status.textContent = 'Error accediendo a la cámara';
+          this.resize();
+        } catch(err){
+          console.error(err);
+          this.status.textContent = (err?.name === 'NotAllowedError') ? 'Permiso de cámara denegado' : 'No se pudo iniciar la cámara';
+          this.btnStart.disabled = false;
         }
       }
 
-      stopCamera() {
+      stop(){
         this.isActive = false;
-        if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
-        if (this.video.srcObject) {
-          this.video.srcObject.getTracks().forEach(track => track.stop());
-          this.video.srcObject = null;
-        }
-        this.ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
-        this.startBtn.disabled = false;
-        this.stopBtn.disabled = true;
+        if(this.camera){ this.camera.stop(); this.camera = null; }
+        this.ctx.setTransform(1,0,0,1,0,0);
+        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+        this.btnStop.disabled = true;
+        this.btnStart.disabled = false;
         this.status.textContent = 'Cámara detenida';
       }
 
-      resizeOverlayToVideo() {
-        this.overlay.width = this.video.videoWidth;
-        this.overlay.height = this.video.videoHeight;
+      resize(){
+        const dpr = window.devicePixelRatio || 1;
+        const w = this.video.videoWidth || this.video.clientWidth || 640;
+        const h = this.video.videoHeight || this.video.clientHeight || 480;
+        this.canvas.width = Math.round(w * dpr);
+        this.canvas.height = Math.round(h * dpr);
+        this.canvas.style.width = `${this.video.clientWidth || w}px`;
+        this.canvas.style.height = `${this.video.clientHeight || h}px`;
+        this.ctx.setTransform(dpr,0,0,dpr,0,0);
       }
 
-      async detectFaces() {
-        const detect = async () => {
-          if (!this.isActive) return;
-          const detections = await faceapi
-            .detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks();
+      onResults(results){
+        if(!this.isActive) return;
+        this.ctx.save();
+        // el video está en espejo (CSS), reflejamos el canvas para coincidir visualmente
+        const dpr = window.devicePixelRatio || 1;
+        this.ctx.translate(this.canvas.width / dpr, 0);
+        this.ctx.scale(-1, 1);
+        this.ctx.clearRect(0,0,this.canvas.width / dpr, this.canvas.height / dpr);
 
-          this.ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+        if(results.multiFaceLandmarks && results.multiFaceLandmarks.length){
+          const lm = results.multiFaceLandmarks[0];
+          // Puntos de referencia (índices de MediaPipe FaceMesh)
+          // 234: mejilla izq, 454: mejilla der, 1: punta de la nariz, 152: mentón
+          const L = lm[234];
+          const R = lm[454];
+          const NOSE = lm[1];
+          const CHIN = lm[152];
 
-          if (detections.length > 0) {
-            const landmarks = detections[0].landmarks;
+          // Convertir a px (image coords ya están normalizados [0..1])
+          const W = this.canvas.width / dpr;
+          const H = this.canvas.height / dpr;
+          const toPx = (p) => ({ x: p.x * W, y: p.y * H });
+          const pL = toPx(L), pR = toPx(R), pN = toPx(NOSE), pC = toPx(CHIN);
 
-            // puntos clave
-            const jaw = landmarks.getJawOutline();
-            const nose = landmarks.getNose();
-            const leftCheek = landmarks.positions[2];
-            const rightCheek = landmarks.positions[14];
+          // Medidas base
+          const dx = pR.x - pL.x; const dy = pR.y - pL.y;
+          const faceWidth = Math.hypot(dx, dy);
+          const faceAngle = Math.atan2(dy, dx); // rotación de la cara
+          const noseToChin = Math.hypot(pC.x - pN.x, pC.y - pN.y);
 
-            // dibujar mascarilla
-            this.ctx.fillStyle = 'rgba(0, 150, 255, 0.4)'; // azul translúcido
-            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // borde blanco
-            this.ctx.lineWidth = 2;
+          // Parámetros ajustables
+          const scaleW = parseFloat(this.scaleInput.value);   // ancho relativo
+          const scaleH = parseFloat(this.heightInput.value);  // alto relativo
 
-            this.ctx.beginPath();
-            this.ctx.moveTo(leftCheek.x, leftCheek.y);
-            jaw.forEach(p => this.ctx.lineTo(p.x, p.y));
-            this.ctx.lineTo(rightCheek.x, rightCheek.y);
-            this.ctx.lineTo(nose[0].x, nose[0].y);
-            this.ctx.lineTo(nose[3].x, nose[3].y);
-            this.ctx.closePath();
+          const maskW = faceWidth * scaleW;
+          const maskH = noseToChin * scaleH;
 
-            this.ctx.fill();
-            this.ctx.stroke();
+          // Centro donde anclar la mascarilla: un poco por debajo de la nariz
+          const cx = (pL.x + pR.x) / 2; // centro entre mejillas
+          const cy = pN.y + (pC.y - pN.y) * 0.45; // entre nariz y mentón
 
-            // dibujar tiras de la mascarilla (opcional)
-            this.ctx.strokeStyle = 'rgba(200,200,200,0.8)';
-            this.ctx.lineWidth = 1.5;
-            this.ctx.beginPath();
-            this.ctx.moveTo(leftCheek.x, leftCheek.y);
-            this.ctx.lineTo(leftCheek.x - 40, leftCheek.y - 20);
-            this.ctx.moveTo(rightCheek.x, rightCheek.y);
-            this.ctx.lineTo(rightCheek.x + 40, rightCheek.y - 20);
-            this.ctx.stroke();
-
-            this.status.textContent = 'Rostro detectado con mascarilla';
-          } else {
-            this.status.textContent = 'Esperando rostro…';
+          if(this.maskReady){
+            this.ctx.save();
+            this.ctx.translate(cx, cy);
+            this.ctx.rotate(faceAngle);
+            // dibujar centrada
+            this.ctx.drawImage(this.maskImg, -maskW/2, -maskH*0.45, maskW, maskH);
+            this.ctx.restore();
           }
 
-          if (this.isActive) this.animationFrame = requestAnimationFrame(detect);
-        };
-        detect();
-      }
+          // Opcional: visualizar landmarks para depurar
+          if(this.showLandmarks.checked){
+            this.ctx.fillStyle = '#10b981';
+            for(const p of lm){ this.ctx.beginPath(); this.ctx.arc(p.x*W, p.y*H, 1.6, 0, Math.PI*2); this.ctx.fill(); }
+          }
 
-      bindEvents() {
-        this.startBtn.addEventListener('click', () => this.startCamera());
-        this.stopBtn.addEventListener('click', () => this.stopCamera());
+          this.status.textContent = 'Rostro detectado';
+        } else {
+          this.status.textContent = 'Esperando rostro…';
+        }
+
+        this.ctx.restore();
       }
     }
 
-    window.addEventListener('DOMContentLoaded', () => new MascarillaFacial());
+    window.addEventListener('DOMContentLoaded', () => new ARMask());
   </script>
 </body>
 </html>
