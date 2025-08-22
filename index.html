@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mascarilla Facial Completa</title>
+  <title>Reconocimiento Facial Futurista</title>
   <style>
     body {
       margin: 0;
-      background: #050505;
+      background: radial-gradient(circle at center, #020b1f 40%, #000 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -22,9 +22,9 @@
       width: 100%;
       max-width: 800px;
       aspect-ratio: 4 / 3;
-      border-radius: 16px;
+      border-radius: 20px;
       overflow: hidden;
-      box-shadow: 0 0 25px #0ff5;
+      box-shadow: 0 0 30px #00ffe5aa;
     }
     video, canvas {
       position: absolute;
@@ -32,26 +32,37 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scaleX(-1); /* espejo natural */
+      transform: scaleX(-1);
+    }
+    #hud {
+      position: absolute;
+      bottom: 10px;
+      left: 20px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #00f6ff;
+      text-shadow: 0 0 8px #00ffff, 0 0 16px #0088ff;
+      animation: flicker 2s infinite alternate;
+    }
+    @keyframes flicker {
+      from { opacity: 0.8; }
+      to { opacity: 1; }
     }
     #startBtn {
-      margin-top: 1rem;
-      padding: 0.8rem 1.6rem;
-      background: linear-gradient(90deg, #00f6ff, #007bff);
+      margin-top: 1.2rem;
+      padding: 1rem 2rem;
+      background: linear-gradient(90deg, #00ffe5, #0077ff);
       border: none;
-      border-radius: 8px;
-      font-size: 1rem;
+      border-radius: 10px;
+      font-size: 1.1rem;
       font-weight: bold;
       color: #fff;
       cursor: pointer;
-      box-shadow: 0 0 15px #00f6ff;
+      box-shadow: 0 0 20px #00f6ffcc;
+      transition: transform 0.2s ease;
     }
-    #status {
-      margin-top: 0.5rem;
-      font-size: 1rem;
-      font-weight: 600;
-      color: #0ff;
-      text-shadow: 0 0 10px #0ff;
+    #startBtn:hover {
+      transform: scale(1.05);
     }
   </style>
 </head>
@@ -59,24 +70,25 @@
   <div id="container">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
+    <div id="hud">◉ Sistema de escaneo listo...</div>
   </div>
-  <button id="startBtn">🚀 Iniciar escaneo facial</button>
-  <div id="status">Esperando…</div>
+  <button id="startBtn">🚀 Iniciar Escaneo Facial</button>
 
   <!-- MediaPipe FaceMesh -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script>
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
-    const status = document.getElementById("status");
+    const hud = document.getElementById("hud");
     const startBtn = document.getElementById("startBtn");
-
     let camera = null;
 
+    // FaceMesh setup
     const faceMesh = new FaceMesh({
-      locateFile: (file) =>
+      locateFile: (file) => 
         `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
 
@@ -95,54 +107,33 @@
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
 
-        // 🎭 Máscara facial fluida
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
-        ctx.shadowColor = "#0ff";
-        ctx.shadowBlur = 8;
+        // ✨ Dibujar malla completa (muchos rayitos)
+        drawConnectors(ctx, landmarks, FACEMESH_TESSELATION,
+          { color: "rgba(0,255,255,0.4)", lineWidth: 0.8 });
 
-        // Dibujar conexiones principales (máscaras completas, no todas las rayas locas)
-        const conexiones = [
-          // Mandíbula
-          [0,17],[17,36],[36,45],[45,54],[54,61],[61,0],
-          // Ojos
-          [33,133],[133,159],[159,145],[145,33],
-          [362,263],[263,387],[387,373],[373,362],
-          // Boca exterior
-          [61,146],[146,91],[91,181],[181,84],[84,17],
-          [291,375],[375,321],[321,405],[405,291]
-        ];
+        // 🎭 Contorno facial más brillante
+        drawConnectors(ctx, landmarks, FACEMESH_FACE_OVAL,
+          { color: "rgba(0,255,255,0.9)", lineWidth: 1.5 });
 
-        conexiones.forEach(([i,j])=>{
-          const x1 = landmarks[i].x * canvas.width;
-          const y1 = landmarks[i].y * canvas.height;
-          const x2 = landmarks[j].x * canvas.width;
-          const y2 = landmarks[j].y * canvas.height;
-          ctx.beginPath();
-          ctx.moveTo(x1,y1);
-          ctx.lineTo(x2,y2);
-          ctx.stroke();
-        });
-
-        // 🎯 Puntos suaves que siguen la expresión (no demasiados)
-        ctx.fillStyle = "rgba(0,255,255,0.9)";
-        for (let i of [1, 10, 33, 61, 199, 263, 291, 468]) {
+        // 💎 Puntos clave brillantes
+        ctx.fillStyle = "rgba(0,255,255,0.95)";
+        for (let i of [1, 33, 61, 199, 263, 291, 468]) {
           const x = landmarks[i].x * canvas.width;
           const y = landmarks[i].y * canvas.height;
           ctx.beginPath();
-          ctx.arc(x, y, 2, 0, 2 * Math.PI);
+          ctx.arc(x, y, 3 + Math.sin(Date.now()/200)*1.5, 0, 2 * Math.PI);
           ctx.fill();
         }
 
-        status.textContent = "✅ Mascarilla activa";
+        hud.textContent = "✅ Escaneo activo: rostro detectado";
       } else {
-        status.textContent = "🔍 Buscando rostro...";
+        hud.textContent = "🔍 Buscando rostro...";
       }
     });
 
     startBtn.addEventListener("click", async () => {
       startBtn.disabled = true;
-      status.textContent = "Activando cámara...";
+      hud.textContent = "Activando cámara...";
 
       camera = new Camera(video, {
         onFrame: async () => {
