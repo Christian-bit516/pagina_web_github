@@ -3,379 +3,379 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Mascarilla: Warping Triangular (Profesional)</title>
+<title>Mascarilla AR profesional — Warped by FaceMesh + Three.js</title>
 <style>
-  html,body{height:100%;margin:0;background:#05060a;color:#e6f6f2;font-family:Inter,system-ui,Arial}
-  .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
-  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-  canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  .ui{position:fixed;left:12px;top:12px;z-index:80;background:rgba(6,10,14,0.6);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
-  .ui button{padding:8px 12px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer}
-  .ui .secondary{background:#374151;margin-left:8px}
-  .sl{width:160px}
-  .centerMsg{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:90;background:rgba(0,0,0,0.45);padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);font-weight:700;color:#7ef0d6}
+  :root{--bg:#03060a;--panel:rgba(10,20,28,0.6);--accent:#00f0d0}
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,Roboto,Arial;color:#eaf8f4}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejo */
+  #threeCanvas{position:absolute;inset:0;pointer-events:none;transform:scaleX(-1);} /* mirror to match video */
+  #overlay2d{position:absolute;inset:0;pointer-events:none;transform:scaleX(-1);} /* same mirror */
+  .ui { position:fixed;left:12px;top:12px;z-index:80;background:var(--panel);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);backdrop-filter:blur(6px) }
+  .ui b{display:block;margin-bottom:6px}
+  .row{display:flex;gap:8px;align-items:center}
+  input[type=range]{width:160px}
+  button{padding:8px 12px;border-radius:8px;border:0;background:linear-gradient(90deg,#00f0d0,#00a6ff);color:#031616;font-weight:800;cursor:pointer}
+  button.secondary{background:#374151;color:white}
+  .status{position:fixed;right:12px;top:12px;background:rgba(0,0,0,0.45);padding:8px 10px;border-radius:8px;color:var(--accent);font-weight:700}
   .hint{position:fixed;left:12px;bottom:12px;color:#9fb7b2;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
 </style>
 
-<!-- MediaPipe -->
+<!-- libs -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.0/delaunator.min.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
-  <div class="stage" id="stage">
+  <div id="stage">
     <video id="video" playsinline muted></video>
-    <canvas id="overlay"></canvas>
+    <!-- Three renderer will create its own canvas; give it an id so we can style -->
+    <div id="threeContainer" style="position:absolute;inset:0;pointer-events:none"></div>
+    <!-- 2D overlay for optional wire/puntos -->
+    <canvas id="overlay2d"></canvas>
   </div>
 
   <div class="ui" role="toolbar">
-    <div style="margin-bottom:8px"><button id="startBtn">Iniciar Escaneo</button><button id="stopBtn" class="secondary" disabled>Detener</button></div>
-    <div style="font-size:13px;margin-bottom:6px">Ajustes máscara</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <label class="small">Scale <input id="maskScale" class="sl" type="range" min="0.7" max="1.6" step="0.01" value="1.0"></label>
-      <label class="small">Y offset <input id="maskY" class="sl" type="range" min="-0.5" max="0.5" step="0.01" value="0.0"></label>
-      <label class="small">X offset <input id="maskX" class="sl" type="range" min="-0.5" max="0.5" step="0.01" value="0.0"></label>
+    <b>Mascarilla AR — Calce perfecto</b>
+    <div class="row" style="margin-bottom:8px">
+      <button id="startBtn">Iniciar Escaneo</button>
+      <button id="stopBtn" class="secondary" disabled>Detener</button>
+    </div>
+
+    <div style="margin-top:8px">
+      <label>Escala máscara: <input id="maskScale" type="range" min="0.6" max="1.6" step="0.01" value="1.0"></label><br/>
+      <label>Offset Y: <input id="maskYOffset" type="range" min="-0.4" max="0.6" step="0.01" value="0.0"></label><br/>
+      <label>Offset X: <input id="maskXOffset" type="range" min="-0.4" max="0.4" step="0.01" value="0.0"></label><br/>
+      <label>Opacidad: <input id="maskAlpha" type="range" min="0" max="1" step="0.01" value="1.0"></label><br/>
+      <label><input id="showWire" type="checkbox" checked/> Mostrar malla ligera</label>
     </div>
   </div>
 
-  <div class="centerMsg" id="centerMsg">Pulsa "Iniciar Escaneo" para comenzar</div>
-  <div class="hint">Servir por HTTPS o usar localhost para cámara en móvil</div>
+  <div class="status" id="status">Listo</div>
+  <div class="hint">Sirve por HTTPS o usa localhost para que la cámara funcione en móviles</div>
 
 <script>
-(async function(){
-  // DOM
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('overlay');
-  const ctx = canvas.getContext('2d', {alpha:true});
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const centerMsg = document.getElementById('centerMsg');
-  const maskScaleEl = document.getElementById('maskScale');
-  const maskYEl = document.getElementById('maskY');
-  const maskXEl = document.getElementById('maskX');
+/*
+  Estrategia:
+  - MediaPipe FaceMesh obtiene 468 landmarks normalizados.
+  - Cada frame:
+      * convertimos landmarks a pixel coords.
+      * calculamos bounding box del rostro.
+      * generamos UVs = ( (x-minX)/w, (y-minY)/h ) para mapear la textura de la máscara a la caja facial.
+      * si aún no existe geometría: triangulamos los puntos 2D con Delaunator -> índices (triangles).
+      * en Three.js creamos BufferGeometry con N vértices (468), indices (triangles) y UVs derivados.
+      * el material usa la textura (mask PNG). Actualizamos posiciones y UVs cada frame.
+  - Además dibujamos un wireframe sutil en canvas 2D para depuración / estilo.
+*/
 
-  // FaceMesh indices we use
-  const IDX = { leftCheek:234, rightCheek:454, noseTip:1, chin:152 };
+const VIDEO = document.getElementById('video');
+const overlay2d = document.getElementById('overlay2d');
+const ctx2d = overlay2d.getContext('2d');
+const startBtn = document.getElementById('startBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
 
-  // load a good transparent mask PNG (you can change URL to your own)
-  const MASK_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
-  const maskImg = new Image();
-  maskImg.crossOrigin = 'anonymous';
-  maskImg.src = MASK_URL;
-  await new Promise(r => { maskImg.onload = r; maskImg.onerror = r; });
+const maskScaleEl = document.getElementById('maskScale');
+const maskYOffsetEl = document.getElementById('maskYOffset');
+const maskXOffsetEl = document.getElementById('maskXOffset');
+const maskAlphaEl = document.getElementById('maskAlpha');
+const showWireEl = document.getElementById('showWire');
 
-  // Triangular source definition within the mask image (in mask pixel coords).
-  // We'll split the mask into two source triangles: top-left, top-right, bottom-center.
-  // Choose source triangle points that cover the mask nicely.
-  // You may adjust these if you use a different mask PNG.
-  const sW = maskImg.width;
-  const sH = maskImg.height;
-  // Define source triangle A (left) and B (right)
-  // Using three source points each (x,y in mask pixel space)
-  const srcA = [{x: sW*0.12, y: sH*0.28}, {x: sW*0.5, y: sH*0.12}, {x: sW*0.12, y: sH*0.85}];
-  const srcB = [{x: sW*0.88, y: sH*0.28}, {x: sW*0.5, y: sH*0.12}, {x: sW*0.88, y: sH*0.85}];
+let camera = null;
+let faceMesh = null;
+let running = false;
+let prevSmoothed = null;
+let dpr = window.devicePixelRatio || 1;
 
-  // Camera & FaceMesh setup
-  let camera = null;
-  let faceMesh = null;
-  let running = false;
-  let prevSmoothed = null;
-  let dpr = window.devicePixelRatio || 1;
+// Three.js globals
+let renderer, scene, camera3, maskMesh, maskTexture, geometry, material;
+let threeContainer = document.getElementById('threeContainer');
 
-  function resizeCanvasToVideo(){
-    const vw = video.videoWidth || video.clientWidth || 640;
-    const vh = video.videoHeight || video.clientHeight || 480;
-    dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(vw * dpr);
-    canvas.height = Math.round(vh * dpr);
-    canvas.style.width = `${vw}px`;
-    canvas.style.height = `${vh}px`;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
+// Mask texture URL (sustituye por tu PNG si quieres)
+const MASK_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
 
-  // Simple EMA smoothing
-  function smooth(prev, curr, alpha=0.7){
-    if (!prev || prev.length !== curr.length) return curr.map(p=>({x:p.x,y:p.y,z:p.z||0}));
-    const out = [];
-    for (let i=0;i<curr.length;i++){
-      out.push({
-        x: prev[i].x*alpha + curr[i].x*(1-alpha),
-        y: prev[i].y*alpha + curr[i].y*(1-alpha),
-        z: (prev[i].z||0)*alpha + (curr[i].z||0)*(1-alpha)
-      });
-    }
-    return out;
-  }
+// Delaunay triangles cache (compute once per face detection)
+let delaunayTriangles = null;
+let lastTriComputeAt = 0;
 
-  // Convert normalized to px
-  function toPixels(landmarks){
-    const W = canvas.width / dpr;
-    const H = canvas.height / dpr;
-    return landmarks.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z||0) * W }));
-  }
+// Init Three.js
+function initThree() {
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  // attach canvas (mirrored by css to match video)
+  renderer.domElement.id = 'threeCanvas';
+  renderer.domElement.style.position = 'absolute';
+  renderer.domElement.style.inset = '0';
+  renderer.domElement.style.pointerEvents = 'none';
+  renderer.domElement.style.transform = 'scaleX(-1)';
+  threeContainer.appendChild(renderer.domElement);
 
-  // Compute affine matrix that maps src triangle to dst triangle.
-  // Returns [a, b, c, d, e, f] for ctx.setTransform(a,b,c,d,e,f)
-  // Such that for a point (u,v) in source, the transformed position is (x,y) in destination.
-  function computeAffineFromTri(srcTri, dstTri) {
-    // Solve linear system for affine transform:
-    // [ u v 1 0 0 0 ] [a]   [x]
-    // [ 0 0 0 u v 1 ] [b] = [y]
-    // for 3 vertices => 6x6 system
-    const A = [];
-    const B = [];
-    for (let i=0;i<3;i++){
-      const su = srcTri[i].x, sv = srcTri[i].y;
-      const dx = dstTri[i].x, dy = dstTri[i].y;
-      A.push([su, sv, 1, 0, 0, 0]);
-      A.push([0, 0, 0, su, sv, 1]);
-      B.push(dx);
-      B.push(dy);
-    }
-    // solve A * T = B
-    // use Gaussian elimination for 6x6 small system
-    // convert to augmented matrix
-    const M = A.map((row,i)=> row.concat(B[i]));
-    // gaussian elimination
-    const n = 6;
-    for (let i=0;i<n;i++){
-      // pivot
-      let maxRow = i;
-      for (let r=i+1;r<n;r++) if (Math.abs(M[r][i]) > Math.abs(M[maxRow][i])) maxRow = r;
-      if (Math.abs(M[maxRow][i]) < 1e-8) continue;
-      const tmp = M[i]; M[i] = M[maxRow]; M[maxRow] = tmp;
-      // normalize row
-      const piv = M[i][i];
-      for (let c=i;c<=n;c++) M[i][c] /= piv;
-      // eliminate
-      for (let r=0;r<n;r++){
-        if (r===i) continue;
-        const fac = M[r][i];
-        if (Math.abs(fac) < 1e-12) continue;
-        for (let c=i;c<=n;c++) M[r][c] -= fac * M[i][c];
-      }
-    }
-    const T = [];
-    for (let i=0;i<n;i++) T.push(M[i][n]);
-    // T = [a, b, e, c, d, f] actually order we solved: first x eq then y eq => [a,b,1x,c,d,1y]? verify mapping:
-    // We created rows [su sv 1 0 0 0] -> a,b,e and [0 0 0 su sv 1] -> c,d,f. So T = [a,b,e,c,d,f]
-    return [T[0], T[1], T[2], T[3], T[4], T[5]];
-  }
+  scene = new THREE.Scene();
+  // orthographic camera where units are pixels, top-left origin adaptation:
+  // We'll use an orthographic camera with left=0,right=width,top=0,bottom=height and flip Y when mapping.
+  camera3 = new THREE.OrthographicCamera(0, window.innerWidth, window.innerHeight, 0, -1000, 1000);
+  camera3.position.z = 10;
 
-  // Draw a source image triangle mapped to destination triangle using ctx transform + clipping
-  function drawImageTri(img, srcTri, dstTri) {
-    // compute affine matrix mapping src->dst
-    const M = computeAffineFromTri(srcTri, dstTri); // [a,b,e,c,d,f]
-    ctx.save();
-    // clip to destination triangle
-    ctx.beginPath();
-    ctx.moveTo(dstTri[0].x, dstTri[0].y);
-    ctx.lineTo(dstTri[1].x, dstTri[1].y);
-    ctx.lineTo(dstTri[2].x, dstTri[2].y);
-    ctx.closePath();
-    ctx.clip();
+  // ambient
+  const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+  scene.add(ambient);
 
-    // set transform so that when we draw the full image, the src triangle maps to dst triangle.
-    // But computeAffine expects source coordinates relative to image, so we must set transform accordingly.
-    // The canvas transform maps new coordinates (x',y') = M * (u,v,1). So we want to draw the image in its own coordinate space with that transform.
-    ctx.setTransform(M[0], M[3], M[1], M[4], M[2], M[5]); // careful with ordering: setTransform(a, c, b, d, e, f)?? canvas uses (a, b, c, d, e, f) mapping x' = a*x + c*y + e; y' = b*x + d*y + f.
-    // Our compute returned [a,b,e,c,d,f] where x' = a*u + b*v + e and y' = c*u + d*v + f. So map to canvas setTransform(a, c, b, d, e, f).
-    // So pass (a, c, b, d, e, f)
-    // But above we passed (M[0], M[3], M[1], M[4], M[2], M[5]) which is (a,c,b,d,e,f).
-    // draw the entire image in its coord space
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-    // restore clip automatically by restore
-  }
+  // load mask texture
+  const loader = new THREE.TextureLoader();
+  maskTexture = loader.load(MASK_URL, () => { maskTexture.minFilter = THREE.LinearFilter; maskTexture.needsUpdate = true; });
 
-  // draw mask split into two triangles mapping srcA->dstA and srcB->dstB
-  function drawMaskOnFace(maskImg, dstPoints, options={scale:1.0, offsetX:0, offsetY:0}) {
-    // dstPoints expected: { leftCheek: {x,y}, rightCheek, noseTip, chin }
-    // We'll define mask destination triangles in pixel space based on these anchors.
-    // Define center top point slightly above nose (interpolate nose & eyes)
-    const L = dstPoints.leftCheek, R = dstPoints.rightCheek, N = dstPoints.noseTip, C = dstPoints.chin;
-    if (!L || !R || !N || !C) return;
+  // initial empty geometry (468 vertices)
+  geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(468 * 3); // x,y,z
+  const uvs = new Float32Array(468 * 2);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2).setUsage(THREE.DynamicDrawUsage));
 
-    // center between cheeks
-    const cx = (L.x + R.x) / 2;
-    const cy = (L.y + R.y) / 2;
+  material = new THREE.MeshBasicMaterial({ map: maskTexture, transparent: true, opacity: parseFloat(maskAlphaEl.value), depthTest: false });
+  maskMesh = new THREE.Mesh(geometry, material);
+  // ensure drawn above scene
+  maskMesh.renderOrder = 100;
+  scene.add(maskMesh);
 
-    // compute face width and height
-    const faceW = Math.hypot(R.x - L.x, R.y - L.y);
-    const faceH = Math.hypot(C.x - N.x, C.y - N.y);
+  onWindowResize();
+  animate();
+}
 
-    // compute a top anchor above nose tip for mask top
-    const topX = N.x;
-    const topY = N.y - faceH * 0.36; // mask extends above nose a bit
+function onWindowResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera3.right = window.innerWidth;
+  camera3.bottom = window.innerHeight;
+  camera3.updateProjectionMatrix();
+  overlay2d.width = Math.round(window.innerWidth * dpr);
+  overlay2d.height = Math.round(window.innerHeight * dpr);
+  overlay2d.style.width = window.innerWidth + 'px';
+  overlay2d.style.height = window.innerHeight + 'px';
+  ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
 
-    // Destination triangles: left and right
-    // left tri: [left cheek top area, top, left chin area]
-    // right tri: [right cheek top area, top, right chin area]
-    const leftTop = { x: lerp(L.x, cx, 0.25) + options.offsetX*faceW, y: lerp(L.y, topY, 0.25) + options.offsetY*faceH };
-    const rightTop = { x: lerp(R.x, cx, 0.25) + options.offsetX*faceW, y: lerp(R.y, topY, 0.25) + options.offsetY*faceH };
-    // bottom left and right near chin
-    const leftBottom = { x: lerp(L.x, C.x, 0.45) + options.offsetX*faceW, y: lerp(L.y, C.y, 0.45) + options.offsetY*faceH };
-    const rightBottom = { x: lerp(R.x, C.x, 0.45) + options.offsetX*faceW, y: lerp(R.y, C.y, 0.45) + options.offsetY*faceH };
+function animate() {
+  requestAnimationFrame(animate);
+  // update material opacity from UI
+  if (material) material.opacity = parseFloat(maskAlphaEl.value);
+  renderer.render(scene, camera3);
+}
 
-    // compute mask size scaling factor
-    const scale = options.scale || 1.0;
-    // For more control we will compute dst triangles as:
-    const dstA = [ leftTop, {x: topX + options.offsetX*faceW, y: topY + options.offsetY*faceH}, leftBottom ];
-    const dstB = [ rightTop, {x: topX + options.offsetX*faceW, y: topY + options.offsetY*faceH}, rightBottom ];
+// util: convert normalized landmarks to pixel coordinates (video space)
+function normToPixel(landmarks) {
+  const W = VIDEO.videoWidth || VIDEO.clientWidth;
+  const H = VIDEO.videoHeight || VIDEO.clientHeight;
+  return landmarks.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z || 0) * W }));
+}
 
-    // optionally apply rotation to better align: we already used interpolation that aligns with cheek line
-    // Now draw image mapped: we need to map source triangles srcA and srcB to dstA/dstB
-    drawImageTri(maskImg, srcA, dstA);
-    drawImageTri(maskImg, srcB, dstB);
-  }
-
-  // lerp convenience
-  function lerp(a,b,t){ return a + (b-a)*t; }
-
-  // Init FaceMesh
-  async function initFaceMesh() {
-    faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-    });
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      selfieMode: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-    faceMesh.onResults(onResults);
-  }
-
-  // render loop callback
-  function onResults(results){
-    // ensure canvas size
-    resizeCanvasToVideo();
-    ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
-
-    if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
-      centerMsg.textContent = 'Esperando rostro...';
-      return;
-    }
-    centerMsg.textContent = 'Rostro detectado — aplicando mascarilla';
-
-    // convert normalized to pixel coords
-    const pixels = toPixels(results.multiFaceLandmarks[0]);
-    // smoothing
-    const smoothPts = smooth(prevSmoothed, pixels, 0.75);
-    prevSmoothed = smoothPts;
-
-    // light wire overlay for recognition feeling
-    drawWireMinimal(smoothPts);
-
-    // prepare dst anchors
-    const dst = {
-      leftCheek: smoothPts[IDX.leftCheek],
-      rightCheek: smoothPts[IDX.rightCheek],
-      noseTip: smoothPts[IDX.noseTip],
-      chin: smoothPts[IDX.chin]
+// EMA smoothing
+function smooth(prev, curr, alpha=0.7){
+  if (!prev || prev.length !== curr.length) return curr.map(p=>({x:p.x,y:p.y,z:p.z||0}));
+  const out = new Array(curr.length);
+  for (let i=0;i<curr.length;i++){
+    out[i] = {
+      x: prev[i].x*alpha + curr[i].x*(1-alpha),
+      y: prev[i].y*alpha + curr[i].y*(1-alpha),
+      z: (prev[i].z||0)*alpha + (curr[i].z||0)*(1-alpha)
     };
-
-    // options from UI
-    const options = {
-      scale: parseFloat(maskScaleEl.value || 1.0),
-      offsetX: parseFloat(maskXEl.value || 0),
-      offsetY: parseFloat(maskYEl.value || 0)
-    };
-
-    // draw the mask using triangular warping
-    // save global alpha & composite to better integrate
-    ctx.save();
-    ctx.globalAlpha = 1.0;
-    drawMaskOnFace(maskImg, dst, options);
-    // subtle shadow under mask to integrate
-    if (dst.noseTip && dst.chin) {
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = '#000';
-      const cx = (dst.leftCheek.x + dst.rightCheek.x)/2;
-      const cy = dst.noseTip.y + (dst.chin.y - dst.noseTip.y) * 0.45;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, Math.hypot(dst.rightCheek.x-dst.leftCheek.x, dst.rightCheek.y-dst.leftCheek.y)*0.46, (dst.chin.y-dst.noseTip.y)*0.18, 0, 0, Math.PI*2);
-      ctx.fill();
-    }
-    ctx.restore();
   }
+  return out;
+}
 
-  // draw a minimal wire (jawline + nose + mouth) to keep recognition look
-  function drawWireMinimal(pts){
-    ctx.save();
-    ctx.lineWidth = 0.9;
-    ctx.strokeStyle = 'rgba(110,240,217,0.95)';
-    ctx.shadowBlur = 6;
-    ctx.shadowColor = 'rgba(110,240,217,0.12)';
-
-    // jaw 0..16
-    ctx.beginPath();
-    for (let i=0;i<=16;i++){ const p = pts[i]; if(!p) continue; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
-    ctx.stroke();
-
-    // nose bridge 1..4
-    ctx.beginPath();
-    for (let i=1;i<=4;i++){ const p=pts[i]; if(!p) continue; if(i===1) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
-    ctx.stroke();
-
-    // mouth outer simplified
-    const mouthIdx = [61,146,91,181,84,17,314,405,321,375,291];
-    ctx.beginPath();
-    for (let i=0;i<mouthIdx.length;i++){ const p=pts[mouthIdx[i]]; if(!p) continue; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
-    ctx.closePath();
-    ctx.stroke();
-
-    // small key dots
-    ctx.fillStyle = 'rgba(255,90,180,0.95)';
-    const keys = [1, 33, 263, 61, 291, 152];
-    for (const k of keys){
-      const p = pts[k]; if(!p) continue;
-      ctx.beginPath(); ctx.arc(p.x,p.y,2.4,0,Math.PI*2); ctx.fill();
-    }
-    ctx.restore();
+// compute bounding box
+function bbox(points) {
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
   }
+  // small padding
+  const padX = (maxX-minX)*0.12, padY = (maxY-minY)*0.12;
+  return { minX: minX - padX, maxX: maxX + padX, minY: minY - padY, maxY: maxY + padY, w: (maxX-minX)+padX*2, h: (maxY-minY)+padY*2 };
+}
 
-  // Start camera
-  startBtn.addEventListener('click', async () => {
-    startBtn.disabled = true;
-    centerMsg.textContent = 'Solicitando cámara, acepta el permiso...';
+// update Three.js geometry positions & uvs & indices (if needed)
+function updateMeshFromLandmarks(smoothed) {
+  // smoothed: array of {x,y,z} in video pixels
+  if (!smoothed || smoothed.length < 10) return;
+  const W = VIDEO.videoWidth || VIDEO.clientWidth;
+  const H = VIDEO.videoHeight || VIDEO.clientHeight;
+
+  // compute bounding box for UV mapping
+  const b = bbox(smoothed);
+
+  // compute uvs relative to bounding box and apply maskScale + offsets
+  const scale = parseFloat(maskScaleEl.value);
+  const offsetY = parseFloat(maskYOffsetEl.value);
+  const offsetX = parseFloat(maskXOffsetEl.value);
+
+  const posAttr = geometry.getAttribute('position');
+  const uvAttr  = geometry.getAttribute('uv');
+
+  // positions: we place vertices in 3D world in pixel coordinates (x,y) and small z from smoothed.z
+  for (let i=0;i<smoothed.length;i++){
+    const p = smoothed[i];
+    // ensure within stage area by mapping to window coordinates: video is full screen; video top-left might be 0,0
+    // positions in Three.js orthographic camera: origin top-left equals (0,0)
+    // Set z small negative to ensure mask overlays video properly
+    const idx3 = i*3;
+    posAttr.array[idx3]   = p.x;       // x in pixels
+    posAttr.array[idx3+1] = p.y;       // y in pixels (top-down coordinate)
+    posAttr.array[idx3+2] = - (p.z || 0) * 0.5; // some depth for parallax
+    // uvs
+    const u = ( (p.x - b.minX) / (b.w) - 0.5 ) * scale + 0.5 + offsetX; // center scale around 0.5
+    const v = ( (p.y - b.minY) / (b.h) - 0.5 ) * scale + 0.5 + offsetY;
+    const idx2 = i*2;
+    uvAttr.array[idx2] = u;
+    uvAttr.array[idx2+1] = 1 - v; // flip V because texture origin top-left vs UV bottom-left
+  }
+  posAttr.needsUpdate = true;
+  uvAttr.needsUpdate = true;
+
+  // compute Delaunay triangulation once after initial detection (or every N ms)
+  if (!delaunayTriangles || performance.now() - lastTriComputeAt > 3000) {
     try {
-      if (!faceMesh) await initFaceMesh();
-      camera = new Camera(video, {
-        onFrame: async () => { await faceMesh.send({image: video}); },
-        width: 960,
-        height: 720,
-        facingMode: 'user'
-      });
-      await camera.start();
-      running = true;
-      stopBtn.disabled = false;
-      centerMsg.textContent = 'Cámara activa — esperando rostro...';
-      video.addEventListener('loadedmetadata', () => resizeCanvasToVideo(), { once:true });
-    } catch (err) {
-      console.error('camera start error', err);
-      centerMsg.textContent = 'Error cámara: ' + (err?.message || err);
-      startBtn.disabled = false;
+      const coords = [];
+      for (let p of smoothed) coords.push(p.x, p.y);
+      const d = Delaunator.from(coords);
+      delaunayTriangles = d.triangles; // flat array of indices triples
+      lastTriComputeAt = performance.now();
+      // set index on geometry
+      geometry.setIndex(Array.from(delaunayTriangles));
+      geometry.computeVertexNormals();
+      geometry.index.needsUpdate = true;
+    } catch (e) {
+      console.warn('Delaunay error', e);
     }
-  });
+  }
+}
 
-  stopBtn.addEventListener('click', () => {
-    if (camera) { camera.stop(); camera = null; }
-    running = false;
+// draw 2D wireframe for style (optional)
+function draw2DWire(smoothed) {
+  ctx2d.clearRect(0,0,overlay2d.width/dpr, overlay2d.height/dpr);
+  if (!smoothed || !showWireEl.checked) return;
+  ctx2d.save();
+  ctx2d.lineWidth = 0.7;
+  ctx2d.strokeStyle = 'rgba(110,240,217,0.95)';
+  ctx2d.shadowBlur = 6;
+  ctx2d.shadowColor = 'rgba(110,240,217,0.12)';
+  // draw light jawline
+  ctx2d.beginPath();
+  for (let i=0;i<=16;i++){
+    const p = smoothed[i];
+    if (!p) continue;
+    if (i===0) ctx2d.moveTo(p.x,p.y); else ctx2d.lineTo(p.x,p.y);
+  }
+  ctx2d.stroke();
+  // draw mouth outline
+  const mouthIdx = [61,146,91,181,84,17,314,405,321,375,291];
+  ctx2d.beginPath();
+  for (let i=0;i<mouthIdx.length;i++){
+    const p = smoothed[mouthIdx[i]];
+    if (!p) continue;
+    if (i===0) ctx2d.moveTo(p.x,p.y); else ctx2d.lineTo(p.x,p.y);
+  }
+  ctx2d.closePath();
+  ctx2d.stroke();
+
+  // key points
+  ctx2d.fillStyle = 'rgba(255,90,180,0.95)';
+  const keys = [1, 33, 263, 61, 291, 152];
+  for (const k of keys){
+    const p = smoothed[k];
+    if (!p) continue;
+    ctx2d.beginPath(); ctx2d.arc(p.x,p.y,2.4,0,Math.PI*2); ctx2d.fill();
+  }
+  ctx2d.restore();
+}
+
+// Main results callback for MediaPipe
+function onFaceResults(results) {
+  if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+    statusEl.textContent = 'Esperando rostro...';
+    // clear overlay 2d and hide mesh
+    ctx2d.clearRect(0,0,overlay2d.width/dpr, overlay2d.height/dpr);
+    maskMesh.visible = false;
+    return;
+  }
+  const landmarks = results.multiFaceLandmarks[0]; // normalized
+  // convert to pixel coords using video size
+  const pixels = landmarks.map(p => ({ x: p.x * VIDEO.videoWidth, y: p.y * VIDEO.videoHeight, z: p.z || 0 }));
+  // smoothing
+  const sm = smooth(prevSmoothed, pixels, 0.72);
+  prevSmoothed = sm;
+
+  // update three geometry
+  maskMesh.visible = true;
+  updateMeshFromLandmarks(sm);
+  // draw wire overlay
+  draw2DWire(sm);
+
+  statusEl.textContent = 'Rostro detectado';
+}
+
+/* init FaceMesh + Camera */
+async function initFacePipeline() {
+  faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+  faceMesh.setOptions({ maxNumFaces:1, refineLandmarks:true, selfieMode:true, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+  faceMesh.onResults(onFaceResults);
+}
+
+/* start/stop camera */
+async function startCamera() {
+  startBtn.disabled = true;
+  statusEl.textContent = 'Solicitando cámara...';
+  try {
+    if (!faceMesh) await initFacePipeline();
+    camera = new Camera(VIDEO, {
+      onFrame: async () => { await faceMesh.send({ image: VIDEO }); },
+      width: 960,
+      height: 720,
+      facingMode: 'user'
+    });
+    await camera.start();
+    running = true;
+    stopBtn.disabled = false;
+    statusEl.textContent = 'Cámara activa';
+  } catch (e) {
+    console.error('camera start error', e);
+    statusEl.textContent = 'Error cámara: ' + (e?.message || e);
     startBtn.disabled = false;
-    stopBtn.disabled = true;
-    centerMsg.textContent = 'Detenido';
-    ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
-  });
+  }
+}
 
-  // helpers: lerp
-  function lerp(a,b,t){ return a + (b-a)*t; }
+function stopCamera() {
+  if (camera) { try { camera.stop(); } catch(e){} camera = null; }
+  running = false;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  statusEl.textContent = 'Detenido';
+  // hide mesh and clear overlays
+  maskMesh.visible = false;
+  ctx2d.clearRect(0,0,overlay2d.width/dpr, overlay2d.height/dpr);
+}
 
-  // expose for debugging
-  window.__maskWarp = { drawMaskOnFace, computeAffineFromTri, srcA, srcB };
+// UI events
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
 
-})(); // IIFE end
+// handle window resize
+window.addEventListener('resize', onWindowResize);
+
+// initialize three and ui
+initThree();
+onWindowResize();
+
+// make sure maskMesh visible = false until detection
+maskMesh.visible = false;
+
+// notes: the UV mapping is computed relatively to the face bounding box each frame.
+// This produces natural warping of the mask texture to the 2D face geometry.
+
 </script>
 </body>
 </html>
