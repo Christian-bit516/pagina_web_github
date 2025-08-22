@@ -2,103 +2,174 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Mascarilla profesional (fix)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Terminal Futurista — AR Cinemático</title>
 <style>
-  :root{--accent:#00f5d4}
-  body{margin:0;background:#07070a;font-family:Inter,system-ui,Roboto,Arial;color:#e6eef8;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
-  .container{width:100%;max-width:1100px;height:80vh;position:relative;border-radius:12px;overflow:hidden;background:#000}
-  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejo */
-  canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  .controls{position:absolute;left:12px;top:12px;z-index:30;background:rgba(0,0,0,0.45);padding:10px;border-radius:10px;backdrop-filter:blur(6px);display:flex;gap:8px;align-items:center}
-  button{padding:.6rem .9rem;border-radius:8px;border:0;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}
-  button.secondary{background:#374151}
-  .status{position:absolute;right:12px;top:12px;color:var(--accent);font-weight:700;background:rgba(0,0,0,0.4);padding:8px 10px;border-radius:8px}
-  .small{font-size:13px;color:#9aa7b3}
-  @media (max-width:700px){ .controls{left:8px;top:8px;padding:8px} .status{right:8px;top:8px} }
+  html,body { height:100%; margin:0; background:#000; font-family:Inter,system-ui,Arial; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+  #wrap { position:fixed; inset:0; overflow:hidden; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg,#020204 0%, #07111a 60%); }
+  video { display:none; } /* video used only as source texture */
+  #ui { position:fixed; left:12px; top:12px; z-index:60; color:#bfeee0; background:rgba(2,6,10,0.45); padding:10px; border-radius:8px; backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,0.04); }
+  #status { margin-left:12px; color:#8ef7d1; font-weight:700; }
+  #hint { position:fixed; left:12px; bottom:12px; z-index:60; color:#8b9aa1; background:rgba(0,0,0,0.45); padding:8px 10px; border-radius:8px; }
+  a { color:#9ef1dd; text-decoration:none }
 </style>
 
 <!-- MediaPipe FaceMesh -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+<!-- ThreeJS + postprocessing -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/shaders/FXAAShader.js"></script>
+
 </head>
 <body>
-  <div class="container" id="stage" role="application">
-    <video id="video" playsinline muted></video>
-    <canvas id="overlay"></canvas>
+  <div id="wrap"></div>
+  <video id="video" autoplay playsinline muted></video>
 
-    <div class="controls" role="toolbar" aria-label="Controles">
+  <div id="ui">
+    <div><b>Terminal Futurista</b></div>
+    <div style="margin-top:6px">
       <button id="startBtn">Iniciar cámara</button>
-      <button id="stopBtn" class="secondary" disabled>Detener</button>
-      <div class="small" id="note">Estado: <span id="statText">inactivo</span></div>
+      <button id="stopBtn" disabled>Detener</button>
+      <span id="status">cargando...</span>
     </div>
-
-    <div class="status" id="status">Listo</div>
+    <div style="margin-top:8px; font-size:13px; color:#9fbfb0">
+      Bloom <input id="bloom" type="range" min="0" max="2.4" step="0.05" value="1.1" />
+    </div>
   </div>
 
+  <div id="hint">Sirve por HTTPS o usa <code>http://localhost</code> para cámara en móvil</div>
+
 <script>
-(async function(){
-  // --- CONFIG ---
-  const MASK_PNG = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
-  // Anchors we will use: left cheek (234), right cheek (454), nose tip (1), chin (152)
-  const IDX = { leftCheek:234, rightCheek:454, nose:1, chin:152 };
+/* -------------------------
+   Configuración global
+   ------------------------- */
+const wrap = document.getElementById('wrap');
+const startBtn = document.getElementById('startBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+const bloomSlider = document.getElementById('bloom');
 
-  // DOM
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('overlay');
-  const ctx = canvas.getContext('2d', { alpha: true });
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const status = document.getElementById('status');
-  const statText = document.getElementById('statText');
+let cameraHelper = null;
+let faceMesh = null;
+let video = document.getElementById('video');
+let running = false;
 
-  // state
-  let camera = null;
-  let faceMesh = null;
-  let running = false;
-  let dpr = window.devicePixelRatio || 1;
-  let prevSmoothed = null;
-  const SMOOTH = 0.6; // 0..1 lower = less smoothing
+/* -------------------------
+   Three.js escena
+   ------------------------- */
+let renderer, scene, camera3, composer, bloomPass;
+let videoTexture, maskTexture;
+let hudGroup;
 
-  // load mask image
-  const maskImg = new Image();
-  maskImg.crossOrigin = 'anonymous';
-  maskImg.src = MASK_PNG;
-  let maskReady = false;
-  maskImg.onload = () => { maskReady = true; console.log('Mask loaded'); };
+/* Inicializar Three */
+function initThree() {
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  wrap.appendChild(renderer.domElement);
 
-  // helpers
-  const lerp = (a,b,t) => a + (b-a)*t;
+  // Scene
+  scene = new THREE.Scene();
 
-  function resizeCanvasToVideo(){
-    const vw = video.videoWidth || video.clientWidth || 640;
-    const vh = video.videoHeight || video.clientHeight || 480;
-    dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(vw * dpr);
-    canvas.height = Math.round(vh * dpr);
-    canvas.style.width = `${vw}px`;
-    canvas.style.height = `${vh}px`;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+  // Camera 3D (ortho-ish feel)
+  camera3 = new THREE.PerspectiveCamera(38, window.innerWidth/window.innerHeight, 0.1, 2000);
+  camera3.position.set(0, 0, 700);
+
+  // Light ambiance
+  const amb = new THREE.AmbientLight(0x88ffdd, 0.4);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0x99fff2, 0.6);
+  dir.position.set(1,2,3);
+  scene.add(dir);
+
+  // Big hologram head (wireframe sphere + noise)
+  const geom = new THREE.IcosahedronGeometry(180, 5); // high-resish sphere
+  const matWire = new THREE.MeshBasicMaterial({ color: 0xcfffee, wireframe: true, opacity: 0.85, transparent: true });
+  const headWire = new THREE.Mesh(geom, matWire);
+  headWire.rotation.y = Math.PI;
+  headWire.position.set(0, -40, -40);
+  headWire.scale.set(1.35,1.65,1.0);
+  scene.add(headWire);
+
+  // pulsing points on the head (instanced points)
+  const pointsGeom = new THREE.BufferGeometry();
+  const pos = new Float32Array(geom.attributes.position.count * 3);
+  for (let i=0;i<geom.attributes.position.count;i++){
+    pos[i*3] = geom.attributes.position.array[i*3];
+    pos[i*3+1] = geom.attributes.position.array[i*3+1];
+    pos[i*3+2] = geom.attributes.position.array[i*3+2];
   }
+  pointsGeom.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const pointsMat = new THREE.PointsMaterial({ size: 2.0, color: 0x7fffe8, opacity:0.9, transparent:true });
+  const headPoints = new THREE.Points(pointsGeom, pointsMat);
+  headPoints.position.copy(headWire.position);
+  headPoints.scale.copy(headWire.scale);
+  scene.add(headPoints);
 
-  // Smooth landmarks temporally
-  function smoothLandmarks(prev, curr){
-    if (!prev || prev.length !== curr.length) {
-      return curr.map(p => ({ x:p.x, y:p.y, z:p.z || 0 }));
-    }
-    const out = [];
-    for (let i=0;i<curr.length;i++){
-      out.push({
-        x: lerp(curr[i].x, prev[i].x, SMOOTH),
-        y: lerp(curr[i].y, prev[i].y, SMOOTH),
-        z: lerp(curr[i].z||0, prev[i].z||0, SMOOTH)
-      });
-    }
-    return out;
+  // HUD panels – thin boxes with alpha
+  hudGroup = new THREE.Group();
+  for (let i=0;i<5;i++){
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(220, 140),
+      new THREE.MeshBasicMaterial({ color: 0x052f2a, transparent:true, opacity:0.16, depthWrite:false })
+    );
+    plane.position.set((i-2)*260, (i%2?120:-120), -220);
+    plane.rotation.y = (i-2)*0.02;
+    hudGroup.add(plane);
   }
+  scene.add(hudGroup);
 
-  // Set up FaceMesh
+  // postprocessing (bloom)
+  composer = new THREE.EffectComposer(renderer);
+  const renderPass = new THREE.RenderPass(scene, camera3);
+  composer.addPass(renderPass);
+  bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.1, 1.2, 0.2);
+  composer.addPass(bloomPass);
+
+  // FXAA
+  const fxaa = new THREE.ShaderPass(THREE.FXAAShader);
+  fxaa.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+  fxaa.renderToScreen = true;
+  composer.addPass(fxaa);
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+/* Ventana redimensiona */
+function onWindowResize(){
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera3.aspect = window.innerWidth / window.innerHeight;
+  camera3.updateProjectionMatrix();
+  composer.setSize(window.innerWidth, window.innerHeight);
+  if (bloomPass) bloomPass.resolution.set(window.innerWidth, window.innerHeight);
+}
+
+/* Render loop Three */
+function animateThree() {
+  // subtle rotation & noise motion
+  scene.rotation.y += 0.0008;
+  // update bloom strength from UI
+  bloomPass.strength = parseFloat(bloomSlider.value);
+
+  composer.render();
+  requestAnimationFrame(animateThree);
+}
+
+/* -------------------------
+   MediaPipe FaceMesh setup
+   ------------------------- */
+async function initFaceMeshAndCamera() {
   faceMesh = new FaceMesh({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
   });
@@ -106,216 +177,201 @@
     maxNumFaces: 1,
     refineLandmarks: true,
     selfieMode: true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+    minDetectionConfidence: 0.55,
+    minTrackingConfidence: 0.55
   });
+  faceMesh.onResults(onFaceResults);
 
-  faceMesh.onResults(onResults);
-
-  // Camera helper
-  function startCamera(){
-    statText.textContent = 'solicitando permiso...';
-    startBtn.disabled = true;
-    // choose moderate resolution for mobile+desktop
-    camera = new Camera(video, {
-      onFrame: async () => { await faceMesh.send({ image: video }); },
-      width: 960,
-      height: 720,
-      facingMode: 'user'
-    });
-    camera.start().then(() => {
-      running = true;
-      stopBtn.disabled = false;
-      statText.textContent = 'cámara activa';
-      status.textContent = 'Cámara activa';
-      // ensure canvas size set
-      video.addEventListener('loadedmetadata', ()=> resizeCanvasToVideo(), { once: true });
-    }).catch(err => {
-      console.error('camera start error', err);
-      startBtn.disabled = false;
-      statText.textContent = 'error: ' + (err?.message || err);
-      status.textContent = 'No se pudo iniciar la cámara';
-    });
-  }
-
-  function stopCamera(){
-    if (camera) { camera.stop(); camera = null; }
-    running = false;
-    stopBtn.disabled = true;
-    startBtn.disabled = false;
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    status.textContent = 'Cámara detenida';
-    statText.textContent = 'detenida';
-  }
-
-  function drawHUDText(){
-    ctx.save();
-    ctx.font = '12px Inter, Arial';
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillText('Mascarilla AR — profesional', 12, 18);
-    ctx.restore();
-  }
-
-  // Main rendering when faceMesh produces results
-  function onResults(results){
-    resizeCanvasToVideo();
-    ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
-    // mirror canvas to match video
-    ctx.save();
-    ctx.translate(canvas.width / dpr, 0);
-    ctx.scale(-1, 1);
-
-    if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
-      status.textContent = 'Esperando rostro…';
-      // still draw HUD
-      drawHUDText();
-      ctx.restore();
-      return;
-    }
-
-    status.textContent = 'Rostro detectado';
-    const raw = results.multiFaceLandmarks[0]; // normalized (x,y,z)
-    const W = canvas.width / dpr;
-    const H = canvas.height / dpr;
-
-    // convert normalized to px
-    const curr = raw.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z || 0) * W }));
-    const smooth = smoothLandmarks(prevSmoothed, curr);
-    prevSmoothed = smooth;
-
-    // Draw light mesh but only on important regions (reduced visual noise)
-    // We'll draw a thin, subtle wire around face contour + nose bridge + mouth contour
-    ctx.lineWidth = 0.9;
-    ctx.strokeStyle = 'rgba(14,165,233,0.85)'; // cyan
-    ctx.shadowColor = 'rgba(14,165,233,0.25)';
-    ctx.shadowBlur = 6;
-
-    // jaw outline indices 0..16
-    const jaw = []; for (let i=0;i<=16;i++) jaw.push(smooth[i]);
-    // draw jaw curve
-    ctx.beginPath();
-    jaw.forEach((p,i)=> { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-    ctx.stroke();
-
-    // nose bridge (indices 1,2,3,4)
-    const noseBridgeIdx = [1,2,3,4];
-    ctx.beginPath();
-    noseBridgeIdx.forEach((idx,i)=> { const p = smooth[idx]; if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-    ctx.stroke();
-
-    // mouth outer (48..60)
-    const mouthOuter = []; for (let i=48;i<=59;i++) mouthOuter.push(smooth[i]);
-    ctx.beginPath();
-    mouthOuter.forEach((p,i)=> { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-    ctx.closePath();
-    ctx.stroke();
-
-    // subtle points only at key landmarks (reduced)
-    const keyIdx = [1, 4, 9, 33, 263, 57, 287, 152]; // nose, top forehead, chin, eye corners, mouth
-    ctx.fillStyle = 'rgba(0,245,212,0.95)';
-    for (const i of keyIdx){
-      const p = smooth[i];
-      if (!p) continue;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2);
-      ctx.fill();
-    }
-
-    // NOW: draw mask image mapped using anchors
-    // anchors: left cheek (234), right cheek (454), nose tip (1), chin (152)
-    const a = smooth[IDX.leftCheek];
-    const b = smooth[IDX.rightCheek];
-    const n = smooth[IDX.nose];
-    const c = smooth[IDX.chin];
-
-    if (a && b && n && c && maskReady) {
-      // compute center between cheeks
-      const cx = (a.x + b.x) / 2;
-      // width approx distance between cheeks
-      const faceW = Math.hypot(b.x - a.x, b.y - a.y);
-      // height approx nose->chin
-      const faceH = Math.hypot(c.x - n.x, c.y - n.y);
-      // rotation angle
-      const angle = Math.atan2(b.y - a.y, b.x - a.x);
-
-      // mask scale tweaks for better fit
-      const maskW = faceW * 1.18;   // widen slightly to cover
-      const maskH = faceH * 1.45;   // taller to cover nose->chin
-      // draw rotated image centered at cx, cy (a bit below nose)
-      const cy = n.y + (c.y - n.y) * 0.45;
-
-      // save and apply transform: translate -> rotate -> drawImage centered
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(angle);
-      // optionally fine-tune vertical offset so the mask sits nicely under nose
-      const yOffset = -maskH * 0.12;
-      ctx.globalAlpha = 1.0;
-      // drawImage(image, x, y, width, height) where x,y are top-left relative to transformed origin
-      ctx.drawImage(maskImg, -maskW/2, yOffset - maskH/2, maskW, maskH);
-      ctx.restore();
-
-      // add soft white border/stitch effect using stroke with low alpha
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(angle);
-      ctx.globalAlpha = 0.9;
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = 2;
-      // approximate border: ellipse path
-      ctx.beginPath();
-      ctx.ellipse(0, yOffset, maskW*0.5, maskH*0.48, 0, 0, Math.PI*2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // small smoothing shadow under mask for integration
-    if (a && b && n && c) {
-      const cx = (a.x + b.x) / 2;
-      const faceW = Math.hypot(b.x - a.x, b.y - a.y);
-      const faceH = Math.hypot(c.x - n.x, c.y - n.y);
-      ctx.save();
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = '#000';
-      const angle = Math.atan2(b.y - a.y, b.x - a.x);
-      ctx.translate(cx, n.y + faceH*0.35);
-      ctx.rotate(angle);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, faceW*0.45, faceH*0.18, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // finish HUD text
-    drawHUDText();
-
-    ctx.restore(); // restore mirroring flip
-  }
-
-  function drawHUDText(){
-    ctx.save();
-    ctx.font = '13px Inter, Arial';
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillText('Mascarilla AR — Profesional', 12, 20);
-    ctx.restore();
-  }
-
-  // button events
-  startBtn.addEventListener('click', () => {
-    startBtn.disabled = true;
-    statText.textContent = 'iniciando...';
-    startCamera();
+  // Camera helper (works on mobile)
+  cameraHelper = new Camera(video, {
+    onFrame: async () => { await faceMesh.send({image: video}); },
+    width: 720,
+    height: 560,
+    facingMode: 'user'
   });
-  stopBtn.addEventListener('click', () => stopCamera());
+}
 
-  // expose simple debug
-  window.__ar = { faceMesh };
+/* Convert normalized landmarks to pixel coords based on video size */
+function landmarksToPixels(landmarks) {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  return landmarks.map(p => ({ x: p.x * w, y: p.y * h, z: (p.z || 0) * w }));
+}
 
-  // initial status
-  status.textContent = 'Pulsa "Iniciar cámara"';
-  statText.textContent = 'detenido';
-
+/* Smooth landmarks temporal (simple EMA) */
+const smoothing = (function(){
+  const prev = { pts: null, alpha: 0.67 };
+  return function(currPts) {
+    if (!prev.pts || prev.pts.length !== currPts.length) { prev.pts = currPts.map(p=>({x:p.x,y:p.y,z:p.z})); return prev.pts; }
+    for (let i=0;i<currPts.length;i++){
+      prev.pts[i].x = prev.pts[i].x*prev.alpha + currPts[i].x*(1-prev.alpha);
+      prev.pts[i].y = prev.pts[i].y*prev.alpha + currPts[i].y*(1-prev.alpha);
+      prev.pts[i].z = prev.pts[i].z*prev.alpha + (currPts[i].z||0)*(1-prev.alpha);
+    }
+    return prev.pts;
+  };
 })();
+
+/* A Three.js plane used as the face mask, we'll position/rotate/scale it to match the face */
+let faceMaskMesh = null;
+let maskLoaded = false;
+
+/* Load mask texture (PNG with transparency) */
+function loadMaskTexture(url) {
+  return new Promise((resolve) => {
+    const loader = new THREE.TextureLoader();
+    loader.load(url, (tex) => {
+      tex.encoding = THREE.sRGBEncoding;
+      tex.anisotropy = 4;
+      resolve(tex);
+    }, undefined, () => { resolve(null); });
+  });
+}
+
+/* Called for each face mesh result */
+let lastFacePts = null;
+async function onFaceResults(results) {
+  if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+    statusEl.textContent = 'Esperando rostro…';
+    return;
+  }
+  statusEl.textContent = 'Rostro detectado';
+
+  // convert to pixel coords (video may be mirrored; video is mirrored via css so we will mirror positions later)
+  const raw = results.multiFaceLandmarks[0];
+  const pts = landmarksToPixels(raw);
+  const smooth = smoothing(pts);
+  lastFacePts = smooth;
+
+  // Position faceMaskMesh:
+  // Use left cheek (234), right cheek (454), and nose tip (1), chin (152)
+  const idxL = 234, idxR = 454, idxN = 1, idxC = 152;
+  if (smooth[idxL] && smooth[idxR] && smooth[idxN] && maskLoaded && faceMaskMesh) {
+    // compute center between cheeks in video pixels
+    const cx = (smooth[idxL].x + smooth[idxR].x)/2;
+    const cy = (smooth[idxL].y + smooth[idxR].y)/2;
+    const faceW = Math.hypot(smooth[idxR].x - smooth[idxL].x, smooth[idxR].y - smooth[idxL].y);
+    const noseToChin = Math.hypot(smooth[idxC].x - smooth[idxN].x, smooth[idxC].y - smooth[idxN].y);
+
+    // convert these video pixel coordinates to NDC projection in Three.js screen plane
+    // We'll map 2D screen coords to 3D world coords at z = 0 plane in front of camera
+    const ndcX = (cx / video.videoWidth) * 2 - 1;
+    const ndcY = -((cy / video.videoHeight) * 2 - 1);
+    // Unproject to world coords at Z = 0 plane
+    const vec = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera3);
+    // Compute scale: determine a world-space width matching faceW in pixels - approximate using screen dimensions
+    const screenToWorld = (px) => px / Math.min(window.innerWidth, window.innerHeight) * 2 * camera3.position.z * Math.tan((camera3.fov * Math.PI / 180)/2);
+    const worldW = screenToWorld(faceW);
+    const worldH = screenToWorld(noseToChin) * 1.2;
+
+    faceMaskMesh.position.lerp(vec, 0.6);
+    faceMaskMesh.scale.lerp(new THREE.Vector3(worldW, worldH, 1), 0.5);
+
+    // compute rotation from cheek line
+    const angle = Math.atan2(smooth[idxR].y - smooth[idxL].y, smooth[idxR].x - smooth[idxL].x);
+    faceMaskMesh.rotation.z = -angle;
+    // slight lift so mask sits a little below nose
+    faceMaskMesh.position.y -= worldH*0.05;
+  }
+
+  // animate hologram head to subtly follow user yaw/pitch
+  if (lastFacePts) {
+    const left = lastFacePts[234], right = lastFacePts[454], top = lastFacePts[10], chin = lastFacePts[152];
+    if (left && right && top && chin) {
+      const yaw = (right.x - left.x) / video.videoWidth; // relative horizontal
+      const pitch = (chin.y - top.y) / video.videoHeight;
+      // rotate scene head a bit
+      scene.rotation.y = THREE.MathUtils.lerp(scene.rotation.y, yaw * -0.6, 0.08);
+      scene.rotation.x = THREE.MathUtils.lerp(scene.rotation.x, pitch * 0.7, 0.06);
+    }
+  }
+}
+
+/* -------------------------
+   Build face mask plane in Three.js
+   ------------------------- */
+async function createFaceMask(tex) {
+  // plane with mask texture and subtle normal map effect (simulated by fragment alpha)
+  const plane = new THREE.PlaneGeometry(1,1);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent:true, depthTest:true, toneMapped:false });
+  const mesh = new THREE.Mesh(plane, mat);
+  mesh.renderOrder = 20;
+  // initial placement off-screen
+  mesh.position.set(0, -1000, 0);
+  scene.add(mesh);
+  return mesh;
+}
+
+/* -------------------------
+   Boot sequence
+   ------------------------- */
+async function boot() {
+  statusEl.textContent = 'Inicializando escena 3D…';
+  initThree();
+
+  statusEl.textContent = 'Inicializando FaceMesh…';
+  await initFaceMeshAndCamera();
+
+  // load mask texture (you can change link to your KN95/watercolor mask)
+  statusEl.textContent = 'Cargando textura de mascarilla…';
+  const maskUrl = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
+  const maskTex = await loadMaskTexture(maskUrl);
+  if (!maskTex) {
+    console.warn('No se cargó la máscara, comprueba la URL');
+  } else {
+    maskLoaded = true;
+    faceMaskMesh = await createFaceMask(maskTex);
+    faceMaskMesh.scale.set(80,110,1); // initial scale
+    faceMaskMesh.position.set(0,0, -150);
+  }
+
+  // start render loop for three
+  animateThree();
+
+  statusEl.textContent = 'Listo — pulsa "Iniciar cámara"';
+}
+
+/* -------------------------
+   Buttons
+   ------------------------- */
+startBtn.addEventListener('click', async () => {
+  statusEl.textContent = 'Solicitando cámara, acepta permiso...';
+  try {
+    await cameraHelper?.stop?.(); // stop if something
+  } catch(e){}
+
+  try {
+    await cameraHelper ?? initFaceMeshAndCamera(); // ensure initialized
+    // start camera
+    await cameraHelper.start();
+  } catch (err) {
+    console.error('camera start err', err);
+  }
+  running = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  statusEl.textContent = 'Cámara activa';
+});
+
+stopBtn.addEventListener('click', async () => {
+  if (cameraHelper) cameraHelper.stop();
+  running = false;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  statusEl.textContent = 'Cámara detenida';
+});
+
+/* connect bloom slider */
+bloomSlider.addEventListener('input', () => {
+  if (bloomPass) bloomPass.strength = parseFloat(bloomSlider.value);
+});
+
+/* start boot */
+boot();
+
+/* Helper: stop camera on unload */
+window.addEventListener('beforeunload', () => { try { cameraHelper && cameraHelper.stop(); } catch(e){} });
+
 </script>
 </body>
 </html>
