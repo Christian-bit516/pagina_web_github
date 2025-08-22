@@ -3,73 +3,103 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Mascarilla Futurista — Nivel Cinematográfico</title>
+<title>Mascarilla profesional (fix)</title>
 <style>
-  :root{--accent:#00f5d4;--accent2:#6ee7b7;--bg:#050608}
-  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial;color:#e6eef8}
-  .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
-  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);filter:brightness(.95) saturate(1.05) contrast(1.02)}
+  :root{--accent:#00f5d4}
+  body{margin:0;background:#07070a;font-family:Inter,system-ui,Roboto,Arial;color:#e6eef8;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
+  .container{width:100%;max-width:1100px;height:80vh;position:relative;border-radius:12px;overflow:hidden;background:#000}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejo */
   canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  .ui{position:fixed;left:12px;top:12px;z-index:60;background:rgba(8,10,12,0.45);backdrop-filter:blur(6px);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04)}
-  .ui b{display:block;margin-bottom:6px}
-  .ui label{display:flex;align-items:center;gap:8px;font-size:13px}
-  .status{position:fixed;right:12px;top:12px;background:linear-gradient(90deg,rgba(0,0,0,0.4),rgba(255,255,255,0.02));padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);font-weight:700;color:var(--accent)}
-  .hint{position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,0.45);padding:8px 12px;border-radius:10px;font-size:13px}
-  .footer {position:fixed;right:12px;bottom:12px;color:#94a3b8;font-size:12px}
-  /* small responsive tweaks */
-  @media (max-width:600px){ .ui{left:8px;top:8px;padding:8px;font-size:13px} .status{right:8px;top:8px} }
+  .controls{position:absolute;left:12px;top:12px;z-index:30;background:rgba(0,0,0,0.45);padding:10px;border-radius:10px;backdrop-filter:blur(6px);display:flex;gap:8px;align-items:center}
+  button{padding:.6rem .9rem;border-radius:8px;border:0;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}
+  button.secondary{background:#374151}
+  .status{position:absolute;right:12px;top:12px;color:var(--accent);font-weight:700;background:rgba(0,0,0,0.4);padding:8px 10px;border-radius:8px}
+  .small{font-size:13px;color:#9aa7b3}
+  @media (max-width:700px){ .controls{left:8px;top:8px;padding:8px} .status{right:8px;top:8px} }
 </style>
 
 <!-- MediaPipe FaceMesh -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-<!-- Delaunator for triangulation -->
-<script src="https://unpkg.com/delaunator@5.0.0/delaunator.min.js"></script>
-
 </head>
 <body>
-  <div class="stage" aria-label="Face AR stage">
+  <div class="container" id="stage" role="application">
     <video id="video" playsinline muted></video>
-    <canvas id="canvas"></canvas>
-  </div>
+    <canvas id="overlay"></canvas>
 
-  <div class="ui" aria-hidden="false">
-    <b>Futuristic AR — Ajustes</b>
-    <label>Intensity: <input id="intensity" type="range" min="0" max="2" step="0.05" value="1"></label>
-    <label>Rim: <input id="rim" type="range" min="0" max="2" step="0.05" value="1.1"></label>
-    <label>Particles: <input id="particles" type="range" min="0" max="1" step="0.05" value="0.6"></label>
-    <label><input id="showWire" type="checkbox" checked> Mostrar wireframe</label>
-  </div>
+    <div class="controls" role="toolbar" aria-label="Controles">
+      <button id="startBtn">Iniciar cámara</button>
+      <button id="stopBtn" class="secondary" disabled>Detener</button>
+      <div class="small" id="note">Estado: <span id="statText">inactivo</span></div>
+    </div>
 
-  <div class="status" id="status">Cargando modelos…</div>
-  <div class="hint">Servir en HTTPS o localhost para cámara en móvil</div>
-  <div class="footer">Futuristic FaceMesh • Real-time • MediaPipe</div>
+    <div class="status" id="status">Listo</div>
+  </div>
 
 <script>
 (async function(){
+  // --- CONFIG ---
+  const MASK_PNG = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
+  // Anchors we will use: left cheek (234), right cheek (454), nose tip (1), chin (152)
+  const IDX = { leftCheek:234, rightCheek:454, nose:1, chin:152 };
 
-  // Dom
+  // DOM
   const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
+  const canvas = document.getElementById('overlay');
   const ctx = canvas.getContext('2d', { alpha: true });
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
   const status = document.getElementById('status');
-  const intensityInput = document.getElementById('intensity');
-  const rimInput = document.getElementById('rim');
-  const particlesInput = document.getElementById('particles');
-  const showWireChk = document.getElementById('showWire');
+  const statText = document.getElementById('statText');
 
-  // settings
-  let width = 1280, height = 720;
+  // state
+  let camera = null;
+  let faceMesh = null;
+  let running = false;
   let dpr = window.devicePixelRatio || 1;
-  let smoothingAlpha = 0.65; // temporal smooth factor for landmarks
   let prevSmoothed = null;
+  const SMOOTH = 0.6; // 0..1 lower = less smoothing
 
-  // utility: linear interpolate
+  // load mask image
+  const maskImg = new Image();
+  maskImg.crossOrigin = 'anonymous';
+  maskImg.src = MASK_PNG;
+  let maskReady = false;
+  maskImg.onload = () => { maskReady = true; console.log('Mask loaded'); };
+
+  // helpers
   const lerp = (a,b,t) => a + (b-a)*t;
 
-  // init MediaPipe FaceMesh
-  const faceMesh = new FaceMesh({
+  function resizeCanvasToVideo(){
+    const vw = video.videoWidth || video.clientWidth || 640;
+    const vh = video.videoHeight || video.clientHeight || 480;
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(vw * dpr);
+    canvas.height = Math.round(vh * dpr);
+    canvas.style.width = `${vw}px`;
+    canvas.style.height = `${vh}px`;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+
+  // Smooth landmarks temporally
+  function smoothLandmarks(prev, curr){
+    if (!prev || prev.length !== curr.length) {
+      return curr.map(p => ({ x:p.x, y:p.y, z:p.z || 0 }));
+    }
+    const out = [];
+    for (let i=0;i<curr.length;i++){
+      out.push({
+        x: lerp(curr[i].x, prev[i].x, SMOOTH),
+        y: lerp(curr[i].y, prev[i].y, SMOOTH),
+        z: lerp(curr[i].z||0, prev[i].z||0, SMOOTH)
+      });
+    }
+    return out;
+  }
+
+  // Set up FaceMesh
+  faceMesh = new FaceMesh({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
   });
   faceMesh.setOptions({
@@ -80,296 +110,212 @@
     minTrackingConfidence: 0.5
   });
 
-  // load complete
   faceMesh.onResults(onResults);
 
-  // start camera using Camera util (works well on mobile)
-  const camera = new Camera(video, {
-    onFrame: async () => { await faceMesh.send({image: video}); },
-    width: width,
-    height: height,
-    facingMode: 'user'
-  });
-
-  // resize helper
-  function resizeCanvasToVideo() {
-    const vw = video.videoWidth || video.clientWidth || width;
-    const vh = video.videoHeight || video.clientHeight || height;
-    dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(vw * dpr);
-    canvas.height = Math.round(vh * dpr);
-    canvas.style.width = `${vw}px`;
-    canvas.style.height = `${vh}px`;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
+  // Camera helper
+  function startCamera(){
+    statText.textContent = 'solicitando permiso...';
+    startBtn.disabled = true;
+    // choose moderate resolution for mobile+desktop
+    camera = new Camera(video, {
+      onFrame: async () => { await faceMesh.send({ image: video }); },
+      width: 960,
+      height: 720,
+      facingMode: 'user'
+    });
+    camera.start().then(() => {
+      running = true;
+      stopBtn.disabled = false;
+      statText.textContent = 'cámara activa';
+      status.textContent = 'Cámara activa';
+      // ensure canvas size set
+      video.addEventListener('loadedmetadata', ()=> resizeCanvasToVideo(), { once: true });
+    }).catch(err => {
+      console.error('camera start error', err);
+      startBtn.disabled = false;
+      statText.textContent = 'error: ' + (err?.message || err);
+      status.textContent = 'No se pudo iniciar la cámara';
+    });
   }
 
-  // particle system anchored to landmarks
-  class Particle {
-    constructor(x,y){
-      this.x = x; this.y = y;
-      this.vx = (Math.random()-0.5)*0.6;
-      this.vy = (Math.random()-0.5)*0.6;
-      this.life = 1 + Math.random()*1.5;
-      this.age = 0;
-      this.size = 0.8 + Math.random()*1.6;
-    }
-    step(dt, tx, ty){
-      // attract to target slightly
-      const ax = (tx - this.x) * 0.002;
-      const ay = (ty - this.y) * 0.002;
-      this.vx = this.vx*0.96 + ax;
-      this.vy = this.vy*0.96 + ay;
-      this.x += this.vx * dt;
-      this.y += this.vy * dt;
-      this.age += dt*0.001;
-    }
-    draw(ctx){
-      const a = Math.max(0, 1 - (this.age/this.life));
-      ctx.globalAlpha = a*0.9;
-      ctx.fillStyle = 'rgba(0,245,212,0.85)';
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
+  function stopCamera(){
+    if (camera) { camera.stop(); camera = null; }
+    running = false;
+    stopBtn.disabled = true;
+    startBtn.disabled = false;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    status.textContent = 'Cámara detenida';
+    statText.textContent = 'detenida';
   }
 
-  let particles = [];
-
-  // helper: compute Delaunay triangles from points (x,y arrays)
-  function computeTriangles(points) {
-    // points: [{x,y}]
-    if (points.length < 3) return [];
-    const coords = [];
-    for (const p of points){ coords.push(p.x, p.y); }
-    const d = Delaunator.from(coords);
-    return d.triangles; // indices into points flattened by 1 (pairs)
+  function drawHUDText(){
+    ctx.save();
+    ctx.font = '12px Inter, Arial';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillText('Mascarilla AR — profesional', 12, 18);
+    ctx.restore();
   }
 
-  // smoothing landmarks across frames
-  function smoothLandmarks(prev, curr, alpha) {
-    if (!prev) return curr.map(p => ({x:p.x,y:p.y,z:p.z}));
-    const out = [];
-    for (let i=0;i<curr.length;i++){
-      out.push({
-        x: lerp(curr[i].x, prev[i].x, alpha),
-        y: lerp(curr[i].y, prev[i].y, alpha),
-        z: lerp(curr[i].z||0, prev[i].z||0, alpha)
-      });
-    }
-    return out;
-  }
+  // Main rendering when faceMesh produces results
+  function onResults(results){
+    resizeCanvasToVideo();
+    ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
+    // mirror canvas to match video
+    ctx.save();
+    ctx.translate(canvas.width / dpr, 0);
+    ctx.scale(-1, 1);
 
-  // onResults: main rendering
-  let lastTime = performance.now();
-  function onResults(results) {
     if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
       status.textContent = 'Esperando rostro…';
-      // fade particles slowly
-      particles = particles.filter(p => p.age < p.life);
-      renderFrame(null);
-      return;
-    }
-    status.textContent = 'Rostro detectado — Futurista';
-
-    resizeCanvasToVideo();
-
-    const raw = results.multiFaceLandmarks[0]; // array of {x,y,z} normalized (x,y relative to image)
-    const W = canvas.width / dpr;
-    const H = canvas.height / dpr;
-    // convert to px
-    const curr = raw.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z || 0) * W })); // scale z to roughly px scale
-
-    // smooth landmarks temporally to avoid jitter
-    const smoothed = smoothLandmarks(prevSmoothed, curr, smoothingAlpha);
-    prevSmoothed = smoothed;
-
-    // compute triangles via Delaunator
-    const pts = smoothed.map(p => ({x:p.x,y:p.y,z:p.z}));
-    const triangles = computeTriangles(pts);
-
-    renderFrame({ pts, triangles });
-
-    // spawn some particles anchored to forehead (use landmark 10/338 region)
-    const spawnRate = Math.max(0, particlesInput.valueAsNumber || 0.6);
-    if (Math.random() < spawnRate*0.6) {
-      // target a random forehead-ish landmark - choose index ~10..20
-      const idx = 10 + Math.floor(Math.random()*20);
-      if (pts[idx]) {
-        const p = pts[idx];
-        particles.push(new Particle(p.x + (Math.random()-0.5)*8, p.y + (Math.random()-0.5)*8));
-        if (particles.length > 160) particles.shift();
-      }
-    }
-  }
-
-  // main draw when we have triangles or null
-  function renderFrame(data){
-    // clear
-    ctx.clearRect(0,0,canvas.width/dpr,canvas.height/dpr);
-
-    // draw subtle vignette/backlight
-    const W = canvas.width / dpr;
-    const H = canvas.height / dpr;
-    const g = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.2, W/2, H/2, Math.max(W,H)*0.9);
-    g.addColorStop(0, 'rgba(0,0,0,0.0)');
-    g.addColorStop(1, 'rgba(0,0,0,0.35)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,W,H);
-
-    if (!data) {
-      // draw faint baseline particles
-      for (let p of particles) {
-        p.step(16, p.x, p.y);
-        p.draw(ctx);
-      }
+      // still draw HUD
+      drawHUDText();
+      ctx.restore();
       return;
     }
 
-    const { pts, triangles } = data;
+    status.textContent = 'Rostro detectado';
+    const raw = results.multiFaceLandmarks[0]; // normalized (x,y,z)
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
 
-    // compute per-triangle shading using z (depth)
-    // We will draw triangles filled with a gradient color that depends on average z
-    const triCount = triangles.length / 3;
-    const intensity = parseFloat(intensityInput.value);
+    // convert normalized to px
+    const curr = raw.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z || 0) * W }));
+    const smooth = smoothLandmarks(prevSmoothed, curr);
+    prevSmoothed = smooth;
 
-    // optional wireframe overlay
-    const showWire = showWireChk.checked;
+    // Draw light mesh but only on important regions (reduced visual noise)
+    // We'll draw a thin, subtle wire around face contour + nose bridge + mouth contour
+    ctx.lineWidth = 0.9;
+    ctx.strokeStyle = 'rgba(14,165,233,0.85)'; // cyan
+    ctx.shadowColor = 'rgba(14,165,233,0.25)';
+    ctx.shadowBlur = 6;
 
-    // Draw solid base with depth shading
-    for (let t = 0; t < triangles.length; t += 3) {
-      const ia = triangles[t], ib = triangles[t+1], ic = triangles[t+2];
-      const a = pts[ia], b = pts[ib], c = pts[ic];
+    // jaw outline indices 0..16
+    const jaw = []; for (let i=0;i<=16;i++) jaw.push(smooth[i]);
+    // draw jaw curve
+    ctx.beginPath();
+    jaw.forEach((p,i)=> { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke();
 
-      // compute centroid z
-      const cz = ((a.z||0) + (b.z||0) + (c.z||0)) / 3;
-      // map z to color factor
-      // typically z is small negative for closer points. Normalize heuristically:
-      const shade = Math.max(0, Math.min(1, 0.5 + (-cz)/200 * intensity ));
-      // base color gradient between deep teal and cyan
-      const r1 = Math.round(10 + 40*shade), g1 = Math.round(200 + 55*shade), b1 = Math.round(180 + 60*shade);
-      // fill triangle
+    // nose bridge (indices 1,2,3,4)
+    const noseBridgeIdx = [1,2,3,4];
+    ctx.beginPath();
+    noseBridgeIdx.forEach((idx,i)=> { const p = smooth[idx]; if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke();
+
+    // mouth outer (48..60)
+    const mouthOuter = []; for (let i=48;i<=59;i++) mouthOuter.push(smooth[i]);
+    ctx.beginPath();
+    mouthOuter.forEach((p,i)=> { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.closePath();
+    ctx.stroke();
+
+    // subtle points only at key landmarks (reduced)
+    const keyIdx = [1, 4, 9, 33, 263, 57, 287, 152]; // nose, top forehead, chin, eye corners, mouth
+    ctx.fillStyle = 'rgba(0,245,212,0.95)';
+    for (const i of keyIdx){
+      const p = smooth[i];
+      if (!p) continue;
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.lineTo(c.x, c.y);
-      ctx.closePath();
-
-      // gradient per triangle for subtle curvature
-      const cx = (a.x+b.x+c.x)/3, cy = (a.y+b.y+c.y)/3;
-      const grad = ctx.createLinearGradient(cx-10, cy-10, cx+20, cy+20);
-      grad.addColorStop(0, `rgba(${r1},${g1},${b1},${0.12 + 0.08*shade})`);
-      grad.addColorStop(1, `rgba(${Math.min(255,r1+30)},${Math.min(255,g1+30)},${Math.min(255,b1+30)},${0.04 + 0.06*shade})`);
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      // rim light: stroke depending on angle (approx using shade)
-      const rim = parseFloat(rimInput.value) || 1.0;
-      ctx.lineWidth = 0.6 * (0.6 + shade*rim);
-      ctx.strokeStyle = `rgba(180,255,235,${0.08 + 0.18*shade})`;
-      if (showWire) ctx.stroke(); // stroke only if wire requested
-    }
-
-    // draw luminous overlays: multiple passes to simulate bloom
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.08;
-    for (let t = 0; t < triangles.length; t += 3) {
-      const ia = triangles[t], ib = triangles[t+1], ic = triangles[t+2];
-      const a = pts[ia], b = pts[ib], c = pts[ic];
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.lineTo(c.x, c.y);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(0,245,212,0.03)';
+      ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2);
       ctx.fill();
     }
-    ctx.restore();
 
-    // update & draw particles anchored to key landmarks
-    // anchor indexes: forehead ~ 10..20, cheeks ~ 234 and 454
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      // find nearest target landmark for this particle (approx by index)
-      // We'll assign target as a slowly moving forehead point:
-      const idx = 10 + (i % 20);
-      const target = pts[idx] || pts[10];
-      p.step(16, target.x + Math.sin(performance.now()*0.001 + i)*6, target.y + Math.cos(performance.now()*0.001 + i)*6);
-      p.draw(ctx);
-      if (p.age > p.life*1.8) particles.splice(i,1);
-    }
+    // NOW: draw mask image mapped using anchors
+    // anchors: left cheek (234), right cheek (454), nose tip (1), chin (152)
+    const a = smooth[IDX.leftCheek];
+    const b = smooth[IDX.rightCheek];
+    const n = smooth[IDX.nose];
+    const c = smooth[IDX.chin];
 
-    // subtle outline glow around face hull (convex hull)
-    // compute hull via simple monotone chain on pts projected
-    const hull = convexHull(pts);
-    if (hull.length > 2) {
+    if (a && b && n && c && maskReady) {
+      // compute center between cheeks
+      const cx = (a.x + b.x) / 2;
+      // width approx distance between cheeks
+      const faceW = Math.hypot(b.x - a.x, b.y - a.y);
+      // height approx nose->chin
+      const faceH = Math.hypot(c.x - n.x, c.y - n.y);
+      // rotation angle
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+
+      // mask scale tweaks for better fit
+      const maskW = faceW * 1.18;   // widen slightly to cover
+      const maskH = faceH * 1.45;   // taller to cover nose->chin
+      // draw rotated image centered at cx, cy (a bit below nose)
+      const cy = n.y + (c.y - n.y) * 0.45;
+
+      // save and apply transform: translate -> rotate -> drawImage centered
       ctx.save();
-      ctx.lineWidth = 2.4;
-      ctx.strokeStyle = 'rgba(0,245,212,0.06)';
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      // optionally fine-tune vertical offset so the mask sits nicely under nose
+      const yOffset = -maskH * 0.12;
+      ctx.globalAlpha = 1.0;
+      // drawImage(image, x, y, width, height) where x,y are top-left relative to transformed origin
+      ctx.drawImage(maskImg, -maskW/2, yOffset - maskH/2, maskW, maskH);
+      ctx.restore();
+
+      // add soft white border/stitch effect using stroke with low alpha
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 2;
+      // approximate border: ellipse path
       ctx.beginPath();
-      ctx.moveTo(hull[0].x, hull[0].y);
-      for (let i=1;i<hull.length;i++) ctx.lineTo(hull[i].x, hull[i].y);
-      ctx.closePath();
+      ctx.ellipse(0, yOffset, maskW*0.5, maskH*0.48, 0, 0, Math.PI*2);
       ctx.stroke();
       ctx.restore();
     }
 
-    // small neon points on strategic landmarks for subtle "HUD" feel
-    const hudIndices = [1, 33, 263, 61, 291, 199]; // nose tip, eyes corners, mouth corners, chin-ish
-    ctx.fillStyle = 'rgba(0,245,212,0.95)';
-    for (const idx of hudIndices) {
-      if (!pts[idx]) continue;
-      const p = pts[idx];
+    // small smoothing shadow under mask for integration
+    if (a && b && n && c) {
+      const cx = (a.x + b.x) / 2;
+      const faceW = Math.hypot(b.x - a.x, b.y - a.y);
+      const faceH = Math.hypot(c.x - n.x, c.y - n.y);
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#000';
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      ctx.translate(cx, n.y + faceH*0.35);
+      ctx.rotate(angle);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 2.0, 0, Math.PI*2);
+      ctx.ellipse(0, 0, faceW*0.45, faceH*0.18, 0, 0, Math.PI*2);
       ctx.fill();
+      ctx.restore();
     }
+
+    // finish HUD text
+    drawHUDText();
+
+    ctx.restore(); // restore mirroring flip
   }
 
-  // convex hull helper (monotone chain)
-  function convexHull(points) {
-    const pts = points.map(p=>({x:p.x,y:p.y})).sort((a,b)=> a.x===b.x ? a.y-b.y : a.x-b.x);
-    if (pts.length <= 3) return pts;
-    const cross = (o,a,b) => (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
-    const lower = [];
-    for (const p of pts) {
-      while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-      lower.push(p);
-    }
-    const upper = [];
-    for (let i = pts.length-1; i >= 0; --i) {
-      const p = pts[i];
-      while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-      upper.push(p);
-    }
-    upper.pop(); lower.pop();
-    return lower.concat(upper);
+  function drawHUDText(){
+    ctx.save();
+    ctx.font = '13px Inter, Arial';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillText('Mascarilla AR — Profesional', 12, 20);
+    ctx.restore();
   }
 
-  // start camera
-  try {
-    await camera.start();
-    status.textContent = 'Cámara activa — list@';
-  } catch (e) {
-    console.error('Camera start error', e);
-    status.textContent = 'Error cámara: ' + (e?.message || e);
-    return;
-  }
+  // button events
+  startBtn.addEventListener('click', () => {
+    startBtn.disabled = true;
+    statText.textContent = 'iniciando...';
+    startCamera();
+  });
+  stopBtn.addEventListener('click', () => stopCamera());
 
-  // hookup UI events for tuning
-  intensityInput.addEventListener('input', ()=>{});
-  rimInput.addEventListener('input', ()=>{});
-  particlesInput.addEventListener('input', ()=>{});
-  showWireChk.addEventListener('change', ()=>{});
+  // expose simple debug
+  window.__ar = { faceMesh };
 
-  // expose globals for debugging
-  window._fm = { camera, faceMesh, canvas, ctx };
-
-  // note: faceMesh.onResults will call render when frames arrive
+  // initial status
+  status.textContent = 'Pulsa "Iniciar cámara"';
+  statText.textContent = 'detenido';
 
 })();
 </script>
-
 </body>
 </html>
