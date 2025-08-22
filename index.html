@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mascarilla Futurista Facial</title>
+  <title>Mascarilla Facial Completa</title>
   <style>
     body {
       margin: 0;
@@ -32,7 +32,7 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      transform: scaleX(-1); /* efecto espejo */
+      transform: scaleX(-1); /* espejo natural */
     }
     #startBtn {
       margin-top: 1rem;
@@ -95,73 +95,46 @@
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
 
-        // ---- DIBUJAR MÁSCARA SUTIL ----
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = "rgba(0, 255, 255, 0.7)";
+        // 🎭 Máscara facial fluida
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(0, 255, 255, 0.5)";
         ctx.shadowColor = "#0ff";
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 8;
 
-        // Mandíbula
-        ctx.beginPath();
-        for (let i = 0; i <= 16; i++) {
-          const x = landmarks[i].x * canvas.width;
-          const y = landmarks[i].y * canvas.height;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
+        // Dibujar conexiones principales (máscaras completas, no todas las rayas locas)
+        const conexiones = [
+          // Mandíbula
+          [0,17],[17,36],[36,45],[45,54],[54,61],[61,0],
+          // Ojos
+          [33,133],[133,159],[159,145],[145,33],
+          [362,263],[263,387],[387,373],[373,362],
+          // Boca exterior
+          [61,146],[146,91],[91,181],[181,84],[84,17],
+          [291,375],[375,321],[321,405],[405,291]
+        ];
 
-        // Ceja izquierda
-        ctx.beginPath();
-        for (let i = 70; i <= 103; i++) {
-          const x = landmarks[i].x * canvas.width;
-          const y = landmarks[i].y * canvas.height;
-          if (i === 70) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
+        conexiones.forEach(([i,j])=>{
+          const x1 = landmarks[i].x * canvas.width;
+          const y1 = landmarks[i].y * canvas.height;
+          const x2 = landmarks[j].x * canvas.width;
+          const y2 = landmarks[j].y * canvas.height;
+          ctx.beginPath();
+          ctx.moveTo(x1,y1);
+          ctx.lineTo(x2,y2);
+          ctx.stroke();
+        });
 
-        // Ceja derecha
-        ctx.beginPath();
-        for (let i = 336; i <= 334; i++) {
-          const x = landmarks[i].x * canvas.width;
-          const y = landmarks[i].y * canvas.height;
-          if (i === 336) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        // Nariz
-        ctx.beginPath();
-        for (let i = 168; i <= 197; i++) {
-          const x = landmarks[i].x * canvas.width;
-          const y = landmarks[i].y * canvas.height;
-          if (i === 168) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        // Contorno de labios
-        ctx.beginPath();
-        for (let i = 61; i <= 88; i++) {
-          const x = landmarks[i].x * canvas.width;
-          const y = landmarks[i].y * canvas.height;
-          if (i === 61) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        // Puntos brillantes (solo algunos estratégicos)
-        ctx.fillStyle = "#00ffff";
-        for (let i of [1, 33, 61, 199, 263, 291]) {
+        // 🎯 Puntos suaves que siguen la expresión (no demasiados)
+        ctx.fillStyle = "rgba(0,255,255,0.9)";
+        for (let i of [1, 10, 33, 61, 199, 263, 291, 468]) {
           const x = landmarks[i].x * canvas.width;
           const y = landmarks[i].y * canvas.height;
           ctx.beginPath();
-          ctx.arc(x, y, 3, 0, 2 * Math.PI);
+          ctx.arc(x, y, 2, 0, 2 * Math.PI);
           ctx.fill();
         }
 
-        status.textContent = "✅ Rostro detectado";
+        status.textContent = "✅ Mascarilla activa";
       } else {
         status.textContent = "🔍 Buscando rostro...";
       }
