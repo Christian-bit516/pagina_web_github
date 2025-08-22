@@ -1,259 +1,155 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Mascarilla Profesional — FaceMesh (Funcional)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Detección Facial Profesional</title>
   <style>
-    :root{color-scheme:dark light}
-    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#0b1220;color:#e5e7eb;display:flex;flex-direction:column;align-items:center}
-    header{width:100%;max-width:1000px;padding:1rem 1.2rem;display:flex;gap:1rem;align-items:center;background:#0f172a;border-bottom:1px solid #111827}
-    h1{margin:0;font-size:1.05rem}
-    #status{margin-left:auto;color:#93c5fd;font-weight:700}
-    main{width:100%;max-width:1000px;padding:1rem;box-sizing:border-box;display:flex;flex-direction:column;align-items:center}
-    .stage{position:relative;width:100%;max-width:880px;border-radius:12px;overflow:hidden;background:#000;border:1px solid #1f2937}
-    video{display:block;width:100%;height:auto;object-fit:cover;transform:scaleX(-1);-webkit-transform:scaleX(-1)} /* espejo para selfie */
-    canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
-    .controls{margin-top:12px;display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center}
-    .btn{padding:.6rem 1rem;border-radius:8px;border:0;cursor:pointer;font-weight:700;background:#2563eb;color:#fff}
-    .btn.secondary{background:#374151}
-    label{display:flex;align-items:center;gap:.4rem;color:#cbd5e1}
+    body {
+      margin: 0;
+      background: #0d1117;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: sans-serif;
+      color: #fff;
+    }
+    .stage {
+      position: relative;
+      width: 95vw;
+      height: 95vh;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* efecto espejo */
+    }
+    #status {
+      position: absolute;
+      bottom: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      padding: .5rem 1rem;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 14px;
+    }
   </style>
-
-  <!-- MediaPipe libs -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Mascarilla Profesional — FaceMesh</h1>
-    <div id="status">Cargando librerías…</div>
-  </header>
-
-  <main>
-    <div class="stage" id="stage">
-      <!-- video visible (espejo) -->
-      <video id="video" playsinline muted></video>
-      <!-- canvas superpuesto para dibujar mesh/pts -->
-      <canvas id="overlay"></canvas>
-    </div>
-
-    <div class="controls">
-      <button id="startBtn" class="btn">Iniciar cámara</button>
-      <button id="stopBtn" class="btn secondary" disabled>Detener</button>
-      <label><input id="showMesh" type="checkbox" checked/> Mostrar mesh</label>
-      <label><input id="showPoints" type="checkbox" checked/> Mostrar puntos</label>
-      <label>Opacidad máscara: <input id="maskOpacity" type="range" min="0.05" max="0.9" step="0.05" value="0.45"/></label>
-    </div>
-  </main>
+  <div class="stage">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div id="status">Cargando modelos…</div>
+  </div>
 
   <script>
-    (function(){
-      const statusEl = document.getElementById('status');
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('overlay');
-      const ctx = canvas.getContext('2d');
-      const startBtn = document.getElementById('startBtn');
-      const stopBtn = document.getElementById('stopBtn');
-      const showMeshChk = document.getElementById('showMesh');
-      const showPointsChk = document.getElementById('showPoints');
-      const maskOpacity = document.getElementById('maskOpacity');
-
-      let camera = null;
-      let faceMesh = null;
-      let running = false;
-
-      // ajuste canvas al tamaño del video cada vez que cambian dimensiones
-      function resizeCanvasToVideo() {
-        const dpr = window.devicePixelRatio || 1;
-        const w = video.videoWidth || video.clientWidth || 640;
-        const h = video.videoHeight || video.clientHeight || 480;
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
-        canvas.style.width = `${video.clientWidth || w}px`;
-        canvas.style.height = `${video.clientHeight || h}px`;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    class DeteccionFacial {
+      constructor() {
+        this.video = document.getElementById('video');
+        this.overlay = document.getElementById('overlay');
+        this.ctx = this.overlay.getContext('2d');
+        this.status = document.getElementById('status');
+        this.models = 'https://justadudewhohacks.github.io/face-api.js/models';
+        this.isActive = false;
+        this.animationFrame = null;
+        this.initialize();
       }
 
-      // Init FaceMesh
-      async function initFaceMesh() {
-        faceMesh = new FaceMesh({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
-        faceMesh.setOptions({
-          maxNumFaces: 1,
-          refineLandmarks: true,
-          selfieMode: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-        faceMesh.onResults(onResults);
-        statusEl.textContent = 'FaceMesh listo';
+      async initialize() {
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(this.models),
+          faceapi.nets.faceLandmark68Net.loadFromUri(this.models)
+        ]);
+        this.status.textContent = 'Modelos cargados';
+        this.startCamera();
       }
 
-      // Resultado: dibujar malla y puntos
-      function onResults(results) {
-        resizeCanvasToVideo();
-        ctx.save();
-        // reflejamos para coincidir con el video espejado
-        const dpr = window.devicePixelRatio || 1;
-        ctx.translate(canvas.width / dpr, 0);
-        ctx.scale(-1, 1);
-        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
-
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-          const landmarks = results.multiFaceLandmarks[0]; // 468 landmarks
-          const W = canvas.width / dpr;
-          const H = canvas.height / dpr;
-
-          // mostrar malla (triangulación)
-          if (showMeshChk.checked && typeof drawConnectors !== 'undefined' && typeof FACEMESH_TESSELATION !== 'undefined') {
-            drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, { color: '#facc15', lineWidth: 0.6 });
-          }
-
-          // puntos
-          if (showPointsChk.checked && typeof drawLandmarks !== 'undefined') {
-            drawLandmarks(ctx, landmarks, { color: '#facc15', radius: 1.6 });
-          }
-
-          // máscara rellena: convex hull de la mitad inferior para evitar distorsión
-          // tomamos la punta de la nariz (1) como referencia de separación superior/inferior
-          const normalized = landmarks.map(p => ({ x: p.x * W, y: p.y * H }));
-          const noseTip = normalized[1];
-          // seleccionar puntos con y > noseTip.y - pequeño margen
-          const lower = normalized.filter(p => p.y > noseTip.y - (H * 0.02));
-          // limitar horizontalmente entre mejillas (234 y 454 si existen)
-          const leftCheek = normalized[234] || normalized[127] || normalized[100];
-          const rightCheek = normalized[454] || normalized[357] || normalized[200];
-          const minX = Math.min(leftCheek.x, rightCheek.x) - 30;
-          const maxX = Math.max(leftCheek.x, rightCheek.x) + 30;
-          const lowerFiltered = lower.filter(p => p.x >= minX && p.x <= maxX);
-
-          // convex hull (monotone chain)
-          function convexHull(points) {
-            if (points.length <= 3) return points.slice();
-            points = points.slice().sort((a,b)=> a.x===b.x ? a.y-b.y : a.x-b.x);
-            const cross = (o,a,b) => (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
-            const lower = [];
-            for (const p of points) {
-              while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-              lower.push(p);
-            }
-            const upper = [];
-            for (let i=points.length-1;i>=0;--i){
-              const p = points[i];
-              while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-              upper.push(p);
-            }
-            upper.pop(); lower.pop();
-            return lower.concat(upper);
-          }
-
-          let hullPts = [];
-          if (lowerFiltered.length >= 8) {
-            hullPts = convexHull(lowerFiltered);
-          } else {
-            // fallback: usar índices de contorno mandibular conocidos (índices aproximados)
-            const jawIndices = [
-              10, 109, 67, 66, 105, 63, 70, 107, 336, 296, 334, 293, 300, 293, 301, 291, 375, 321, 405, 314
-            ];
-            const fallback = jawIndices.map(i => normalized[i]).filter(Boolean);
-            hullPts = convexHull(fallback);
-          }
-
-          if (hullPts.length >= 3) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(hullPts[0].x, hullPts[0].y);
-            for (let i = 1; i < hullPts.length; i++) ctx.lineTo(hullPts[i].x, hullPts[i].y);
-            ctx.closePath();
-            ctx.globalAlpha = parseFloat(maskOpacity.value);
-            ctx.fillStyle = '#0ea5e9';
-            ctx.fill();
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-            ctx.lineWidth = 1.4;
-            ctx.stroke();
-            ctx.restore();
-          }
-
-          statusEl.textContent = 'Rostro detectado';
-        } else {
-          statusEl.textContent = 'Esperando rostro…';
-        }
-
-        ctx.restore();
-      }
-
-      // start/stop camera with MediaPipe Camera helper
-      async function startCamera() {
-        if (!faceMesh) await initFaceMesh(); // safety
-        startBtn.disabled = true;
-        statusEl.textContent = 'Solicitando cámara... (acepta el permiso)';
+      async startCamera() {
         try {
-          camera = new Camera(video, {
-            onFrame: async () => { await faceMesh.send({image: video}); },
-            width: 1280,
-            height: 720,
-            facingMode: 'user'
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
           });
-          await camera.start();
-          running = true;
-          stopBtn.disabled = false;
-          statusEl.textContent = 'Cámara activa';
-          // ensure canvas sized after camera stream ready
-          video.addEventListener('loadedmetadata', () => resizeCanvasToVideo(), { once: true });
+          this.video.srcObject = stream;
+          await this.video.play();
+          this.resizeOverlay();
+          this.isActive = true;
+          this.detectFaces();
+          this.status.textContent = 'Cámara activa';
         } catch (err) {
-          console.error('Error al iniciar cámara:', err);
-          startBtn.disabled = false;
-          statusEl.textContent = err?.name === 'NotAllowedError' ? 'Permiso de cámara denegado' : 'No se pudo iniciar la cámara';
+          this.status.textContent = 'Error accediendo a la cámara';
         }
       }
 
-      function stopCamera() {
-        if (camera) { camera.stop(); camera = null; }
-        running = false;
-        stopBtn.disabled = true;
-        startBtn.disabled = false;
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        statusEl.textContent = 'Cámara detenida';
+      resizeOverlay() {
+        this.overlay.width = this.video.videoWidth;
+        this.overlay.height = this.video.videoHeight;
       }
 
-      // init FaceMesh once
-      async function initFaceMesh(){
-        faceMesh = new FaceMesh({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
-        faceMesh.setOptions({
-          maxNumFaces: 1,
-          refineLandmarks: true,
-          selfieMode: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-        faceMesh.onResults(onResults);
-        statusEl.textContent = 'FaceMesh listo';
+      async detectFaces() {
+        const detect = async () => {
+          if (!this.isActive) return;
+          const detections = await faceapi.detectAllFaces(
+            this.video,
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.5 })
+          ).withFaceLandmarks();
+
+          this.ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+
+          if (detections.length > 0) {
+            const landmarks = detections[0].landmarks;
+            this.drawSmoothMask(landmarks);
+            this.status.textContent = 'Rostro detectado';
+          } else {
+            this.status.textContent = 'Esperando rostro…';
+          }
+
+          this.animationFrame = requestAnimationFrame(detect);
+        };
+        detect();
       }
 
-      // botones
-      startBtn.addEventListener('click', async () => startCamera());
-      stopBtn.addEventListener('click', stopCamera);
+      drawSmoothMask(landmarks) {
+        const important = [
+          ...landmarks.getJawOutline(),
+          ...landmarks.getLeftEye(),
+          ...landmarks.getRightEye(),
+          ...landmarks.getNose(),
+          ...landmarks.getMouth()
+        ];
 
-      // carga inicial
-      (async () => {
-        try {
-          await initFaceMesh();
-          statusEl.textContent = 'Listo — pulsa "Iniciar cámara"';
-        } catch (e) {
-          console.error(e);
-          statusEl.textContent = 'Error inicializando FaceMesh';
-        }
-      })();
+        // Dibujar contorno suave
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = "rgba(0, 255, 100, 0.7)";
+        this.ctx.beginPath();
+        important.forEach((pt, i) => {
+          if (i === 0) this.ctx.moveTo(pt.x, pt.y);
+          else this.ctx.lineTo(pt.x, pt.y);
+        });
+        this.ctx.closePath();
+        this.ctx.stroke();
 
-      // resize on viewport change
-      window.addEventListener('resize', () => { if (running) resizeCanvasToVideo(); });
-    })();
+        // Dibujar puntos
+        this.ctx.fillStyle = "rgba(0, 255, 150, 0.9)";
+        important.forEach(pt => {
+          this.ctx.beginPath();
+          this.ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
+          this.ctx.fill();
+        });
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => new DeteccionFacial());
   </script>
 </body>
 </html>
