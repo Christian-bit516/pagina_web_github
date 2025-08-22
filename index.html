@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mascarilla Facial Futurista</title>
+  <title>Mascarilla Futurista Facial</title>
   <style>
     body {
       margin: 0;
-      background: #0d0d0d;
-      color: white;
-      font-family: "Segoe UI", sans-serif;
+      background: #050505;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       height: 100vh;
+      color: white;
+      font-family: "Segoe UI", sans-serif;
       overflow: hidden;
     }
     #container {
@@ -22,10 +22,9 @@
       width: 100%;
       max-width: 800px;
       aspect-ratio: 4 / 3;
-      border: 3px solid #0ff;
-      border-radius: 12px;
+      border-radius: 16px;
       overflow: hidden;
-      box-shadow: 0 0 25px #0ff8;
+      box-shadow: 0 0 25px #0ff5;
     }
     video, canvas {
       position: absolute;
@@ -64,11 +63,9 @@
   <button id="startBtn">🚀 Iniciar escaneo facial</button>
   <div id="status">Esperando…</div>
 
-  <!-- Importar MediaPipe FaceMesh -->
+  <!-- MediaPipe FaceMesh -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-
   <script>
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
@@ -78,7 +75,6 @@
 
     let camera = null;
 
-    // Inicializar FaceMesh
     const faceMesh = new FaceMesh({
       locateFile: (file) =>
         `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
@@ -99,29 +95,69 @@
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
 
-        // Dibujar polígonos futuristas
-        ctx.strokeStyle = "#00ffff";
-        ctx.lineWidth = 1.2;
-        ctx.shadowColor = "#00ffff";
-        ctx.shadowBlur = 15;
+        // ---- DIBUJAR MÁSCARA SUTIL ----
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(0, 255, 255, 0.7)";
+        ctx.shadowColor = "#0ff";
+        ctx.shadowBlur = 12;
 
+        // Mandíbula
         ctx.beginPath();
-        landmarks.forEach((p, i) => {
-          const x = p.x * canvas.width;
-          const y = p.y * canvas.height;
+        for (let i = 0; i <= 16; i++) {
+          const x = landmarks[i].x * canvas.width;
+          const y = landmarks[i].y * canvas.height;
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
+        }
         ctx.stroke();
 
-        // Puntos brillantes
-        ctx.fillStyle = "#0ff";
-        for (let i = 0; i < landmarks.length; i += 10) {
+        // Ceja izquierda
+        ctx.beginPath();
+        for (let i = 70; i <= 103; i++) {
+          const x = landmarks[i].x * canvas.width;
+          const y = landmarks[i].y * canvas.height;
+          if (i === 70) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Ceja derecha
+        ctx.beginPath();
+        for (let i = 336; i <= 334; i++) {
+          const x = landmarks[i].x * canvas.width;
+          const y = landmarks[i].y * canvas.height;
+          if (i === 336) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Nariz
+        ctx.beginPath();
+        for (let i = 168; i <= 197; i++) {
+          const x = landmarks[i].x * canvas.width;
+          const y = landmarks[i].y * canvas.height;
+          if (i === 168) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Contorno de labios
+        ctx.beginPath();
+        for (let i = 61; i <= 88; i++) {
+          const x = landmarks[i].x * canvas.width;
+          const y = landmarks[i].y * canvas.height;
+          if (i === 61) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Puntos brillantes (solo algunos estratégicos)
+        ctx.fillStyle = "#00ffff";
+        for (let i of [1, 33, 61, 199, 263, 291]) {
           const x = landmarks[i].x * canvas.width;
           const y = landmarks[i].y * canvas.height;
           ctx.beginPath();
-          ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+          ctx.arc(x, y, 3, 0, 2 * Math.PI);
           ctx.fill();
         }
 
