@@ -2,55 +2,31 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>Iniciar Escaneo — Terminal Futurista</title>
-<link rel="icon" href="data:," />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Detector de Emoción — Feliz / Molesto (FaceMesh)</title>
 <style>
-  :root {
-    --bg: #04060a;
-    --panel: rgba(7,20,30,0.6);
-    --accent: #6ef0d9;
-    --muted: #9bb7c2;
+  :root{
+    --bg:#02050a;
+    --panel:rgba(8,12,18,0.6);
+    --neon:#00f0d0;
+    --accent:#ff6b6b;
   }
-  html,body{height:100%;margin:0;background:var(--bg);font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;color:#e6f6f2}
-  .center {
-    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;
-  }
-
-  /* START SCREEN */
-  .start-screen {
-    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;
-    background:linear-gradient(180deg, rgba(4,6,10,0.6), rgba(4,6,10,0.25));
-    z-index:60;
-  }
-  .brand {font-size:20px;font-weight:800;letter-spacing:.6px;color:var(--accent)}
-  .hero {
-    width:320px;height:320px;border-radius:20px;background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
-    display:flex;align-items:center;justify-content:center;box-shadow:0 8px 30px rgba(0,0,0,0.7);backdrop-filter:blur(6px);
-    border:1px solid rgba(255,255,255,0.03);
-  }
-  .btn {
-    padding:12px 20px;border-radius:12px;border:0;background:linear-gradient(90deg,#00f0d0,#00a6ff);color:#021818;font-weight:800;cursor:pointer;font-size:15px;
-    box-shadow:0 12px 30px rgba(0,170,255,0.18);transition:transform .12s ease, box-shadow .12s ease;
-  }
-  .btn:active{transform:translateY(2px)}
-  .sub {color:var(--muted);font-size:13px;text-align:center;max-width:360px}
-
-  /* STAGE */
-  #stage{position:fixed;inset:0;background:linear-gradient(180deg,#020306, #071522);display:flex;align-items:center;justify-content:center}
-  /* Video visible and mirror */
-  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);-webkit-transform:scaleX(-1)}
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,Roboto,Arial;color:#e8f7f2}
+  .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
   canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-
-  /* HUD */
-  .hud {
-    position:fixed;left:18px;top:18px;z-index:80;background:var(--panel);padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);
-    display:flex;gap:12px;align-items:center;
-  }
-  .status {font-weight:700;color:var(--accent)}
-  .hint {position:fixed;left:18px;bottom:18px;background:rgba(0,0,0,0.45);padding:8px 10px;border-radius:8px;color:var(--muted);font-size:13px}
-  .rightPanel {position:fixed;right:18px;top:18px;background:var(--panel);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);font-size:13px;color:var(--muted)}
-  .small {font-size:12px;color:#9fb2b8}
+  /* center UI */
+  .ui-panel{position:fixed;left:18px;top:18px;background:var(--panel);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);backdrop-filter:blur(6px)}
+  .center-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;display:flex;flex-direction:column;align-items:center;gap:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:18px;border-radius:14px;border:1px solid rgba(255,255,255,0.04);box-shadow:0 20px 40px rgba(0,0,0,0.6)}
+  .big-status{font-size:34px;font-weight:800;color:var(--neon);text-shadow:0 4px 20px rgba(0,240,208,0.08);display:flex;align-items:center;gap:12px}
+  .big-status.angry{color:var(--accent); text-shadow:0 6px 26px rgba(255,107,107,0.12)}
+  .start-btn{padding:12px 18px;border-radius:12px;border:0;background:linear-gradient(90deg,#00f0d0,#00a6ff);color:#012527;font-weight:800;cursor:pointer}
+  .stop-btn{padding:10px 14px;border-radius:10px;border:0;background:#24303a;color:#fff;cursor:pointer}
+  .small{font-size:13px;color:#9fb7b2}
+  .controls{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .range{width:240px}
+  .footer-note{position:fixed;left:18px;bottom:18px;color:#9fb7b2;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
+  @media (max-width:700px){ .ui-panel{left:8px;top:8px} .center-card{width:92vw} .range{width:160px} }
 </style>
 
 <!-- MediaPipe FaceMesh -->
@@ -59,60 +35,58 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
-  <div class="center" id="stage">
-    <video id="video" playsinline muted></video>
+  <div class="stage" id="stage">
+    <video id="video" playsinline autoplay muted></video>
     <canvas id="overlay"></canvas>
+  </div>
 
-    <!-- HUD -->
-    <div class="hud" aria-live="polite">
-      <div class="brand">IDENTIFY CORE</div>
-      <div style="display:flex;flex-direction:column">
-        <div class="status" id="statusText">Listo</div>
-        <div class="small" id="subStatus">Pulsa "Iniciar Escaneo"</div>
-      </div>
+  <div class="ui-panel" aria-hidden="false">
+    <div style="font-weight:800;margin-bottom:6px">Detector de Emoción (Demo)</div>
+    <div class="small">Ajusta si la cámara/rostro no encaja. Sirve por HTTPS o localhost en móvil.</div>
+  </div>
+
+  <div class="center-card" id="centerCard">
+    <div id="bigIcon" class="big-status">—</div>
+    <div id="bigText" style="font-size:18px;font-weight:700;color:#ddeee9">Pulsa "Iniciar Escaneo"</div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button id="startBtn" class="start-btn">Iniciar Escaneo</button>
+      <button id="stopBtn" class="stop-btn" disabled>Detener</button>
     </div>
 
-    <div class="rightPanel">
-      <div><b>Modo</b>: <span id="mode">Escaneo facial</span></div>
-      <div style="margin-top:8px"><b>Sugerencia</b></div>
-      <div class="small">Colócate frente a la cámara con buena iluminación. Usa la cámara frontal.</div>
-    </div>
-
-    <div class="hint">Servir por HTTPS o usar localhost para cámara en móvil</div>
-
-    <!-- START SCREEN -->
-    <div class="start-screen" id="startScreen">
-      <div class="brand">TERMINAL · SCANNER</div>
-      <div class="hero" id="hero">
-        <!-- animated svg circle -->
-        <svg width="180" height="180" viewBox="0 0 100 100">
-          <defs>
-            <linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#00f0d0"/><stop offset="1" stop-color="#00a6ff"/></linearGradient>
-          </defs>
-          <circle cx="50" cy="50" r="30" stroke="url(#g)" stroke-width="2" fill="rgba(0,0,0,0.08)"></circle>
-          <g id="scanIcon" transform="translate(50,50)">
-            <path d="M-10 0 a10 10 0 1 0 20 0 a10 10 0 1 0 -20 0" stroke="url(#g)" stroke-width="1.6" fill="none"></path>
-            <rect x="-6" y="-6" width="12" height="12" rx="2" fill="url(#g)"></rect>
-          </g>
-        </svg>
-      </div>
-
-      <button id="startButton" class="btn">Iniciar Escaneo</button>
-      <div class="sub">Al presionar se solicitará permiso para acceder a la cámara. Compatible con PC y móviles (HTTPS o localhost).</div>
+    <div class="controls" style="margin-top:6px">
+      <div class="small">Umbrales (ajusta si es necesario)</div>
+      <label class="small">Umbral sonrisa: <input id="smileThresh" class="range" type="range" min="0.20" max="0.8" step="0.01" value="0.41"></label>
+      <label class="small">Umbral apertura de boca: <input id="openThresh" class="range" type="range" min="0.02" max="0.5" step="0.01" value="0.10"></label>
+      <label class="small">Umbral cejas (molestia): <input id="browThresh" class="range" type="range" min="-0.03" max="0.08" step="0.005" value="0.01"></label>
     </div>
   </div>
 
+  <div class="footer-note" id="footerNote">Estado: <span id="state">detenido</span></div>
+
 <script>
-/* ===========================
-   Variables & DOM
-   =========================== */
-const startScreen = document.getElementById('startScreen');
-const startButton = document.getElementById('startButton');
-const video = document.getElementById('video');
-const overlay = document.getElementById('overlay');
-const ctx = overlay.getContext('2d');
-const statusText = document.getElementById('statusText');
-const subStatus = document.getElementById('subStatus');
+/*
+  Detector de emoción simple basado en MediaPipe FaceMesh landmarks.
+  Heurísticas usadas:
+   - smileScore = mouthWidth / eyeDistance (normalizado) -> mayor => sonrisa
+   - openMouth = mouthOpen / eyeDistance -> detecta si la boca está abierta (podría indicar risa open)
+   - browRise = average(eyebrowY relative to eyeY) -> cejas bajas (valor pequeño o negativo) -> posible enfado/ceño
+
+  NOTA: si quieres máxima precisión usar un modelo ML entrenado (p.ej. CNN sobre rostro).
+  Este demo entrega una solución robusta en navegador y permite ajustes por sliders.
+*/
+
+const VIDEO = document.getElementById('video');
+const CANV = document.getElementById('overlay');
+const ctx = CANV.getContext('2d');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const bigIcon = document.getElementById('bigIcon');
+const bigText = document.getElementById('bigText');
+const footerState = document.getElementById('state');
+
+const smileThreshEl = document.getElementById('smileThresh');
+const openThreshEl = document.getElementById('openThresh');
+const browThreshEl = document.getElementById('browThresh');
 
 let camera = null;
 let faceMesh = null;
@@ -120,23 +94,19 @@ let running = false;
 let prevSmoothed = null;
 let dpr = window.devicePixelRatio || 1;
 
-/* ===========================
-   Helpers
-   =========================== */
-function resizeCanvasToVideo(){
-  const vw = video.videoWidth || video.clientWidth || 640;
-  const vh = video.videoHeight || video.clientHeight || 480;
-  dpr = window.devicePixelRatio || 1;
-  overlay.width = Math.round(vw * dpr);
-  overlay.height = Math.round(vh * dpr);
-  overlay.style.width = `${vw}px`;
-  overlay.style.height = `${vh}px`;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+// utility: distance
+function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
+
+// convert normalized landmarks to px coords for current canvas
+function toPixels(landmarks){
+  const W = CANV.width / dpr;
+  const H = CANV.height / dpr;
+  return landmarks.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z||0) * W}));
 }
 
-/* EMA smoothing to reduce jitter */
-function smoothLandmarks(prev, curr, alpha=0.7){
-  if (!prev || prev.length !== curr.length) return curr.map(p => ({x:p.x,y:p.y,z:p.z||0}));
+// EMA smoothing
+function smooth(prev, curr, alpha=0.7){
+  if (!prev || prev.length !== curr.length) return curr.map(p=>({x:p.x,y:p.y,z:p.z||0}));
   const out = [];
   for (let i=0;i<curr.length;i++){
     out.push({
@@ -148,256 +118,244 @@ function smoothLandmarks(prev, curr, alpha=0.7){
   return out;
 }
 
-/* Map normalized MediaPipe coordinates to pixel coords of canvas */
-function toPixels(landmarks){
-  const W = overlay.width / dpr;
-  const H = overlay.height / dpr;
-  return landmarks.map(p => ({x: p.x * W, y: p.y * H, z: (p.z||0) * (W)}));
+function resizeCanvasToVideo(){
+  const vw = VIDEO.videoWidth || VIDEO.clientWidth || 640;
+  const vh = VIDEO.videoHeight || VIDEO.clientHeight || 480;
+  dpr = window.devicePixelRatio || 1;
+  CANV.width = Math.round(vw * dpr);
+  CANV.height = Math.round(vh * dpr);
+  CANV.style.width = `${vw}px`;
+  CANV.style.height = `${vh}px`;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
 }
 
-/* ===========================
-   Drawing utilities
-   =========================== */
-function clear() {
-  ctx.clearRect(0,0,overlay.width/dpr, overlay.height/dpr);
-}
-
-/* draw subtle wireframe using MediaPipe FACEMESH_TESSELATION connectors if available,
-   else fallback to simple edges (less detailed) */
-function drawWire(landmarks, color='#8af7e3', lineWidth=0.6) {
-  // landmarks is array of {x,y}
+// draw minimalist mesh: wireframe + few key points (not too many)
+function drawFaceMesh(pts){
   ctx.save();
-  ctx.lineWidth = lineWidth;
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = 'rgba(108, 242, 209, 0.95)'; // cyan
+  ctx.shadowColor = 'rgba(108, 242, 209, 0.06)';
   ctx.shadowBlur = 8;
-  ctx.shadowColor = color;
 
+  // if drawing utilities available, try drawConnectors to get full tessellation
   if (typeof drawConnectors !== 'undefined' && typeof FACEMESH_TESSELATION !== 'undefined') {
-    // drawConnectors expects normalized landmarks and will scale internally if called with results.image previously
-    // But we will draw using pixel coords: transform connectors to pixel pairs
-    // We can reuse drawConnectors by providing original normalized landmarks, but simpler: re-draw based on known connector indices
     try {
-      // drawing_utils.drawConnectors accepts ctx drawn with canvas and normalized landmark array,
-      // but we don't pass results.image; instead we'll use the global function which uses internal scaling.
-      // For reliability, attempt to call drawConnectors with pixel coordinates by mapping to a temporary object:
-      drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, {color: color, lineWidth: lineWidth});
-    } catch (e) {
-      // fallback
-      fallbackWire(landmarks, color, lineWidth);
-    }
+      // drawConnectors can accept normalized landmarks when used with drawing_utils via MediaPipe examples,
+      // but here we already have pixel coords; fallback to drawing a simplified wire manually:
+      // We'll draw a few connector sets: (jawline, left eye outline, right eye outline, lips)
+      // jaw 0..16
+      ctx.beginPath();
+      for (let i=0;i<=16;i++){ const p=pts[i]; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
+      ctx.stroke();
+
+      // left eye 33..133 (approx) draw a ring via known indices for left eye
+      const leftEyeIdx = [33,7,163,144,145,153,154,155,133];
+      ctx.beginPath();
+      leftEyeIdx.forEach((id,i)=>{ const p=pts[id]; if(!p) return; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+      ctx.closePath();
+      ctx.stroke();
+
+      const rightEyeIdx = [263,249,390,373,374,380,381,382,362];
+      ctx.beginPath();
+      rightEyeIdx.forEach((id,i)=>{ const p=pts[id]; if(!p) return; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+      ctx.closePath();
+      ctx.stroke();
+
+      // mouth outer 61..291.. etc - draw outer lip
+      const mouthIdx = [61,146,91,181,84,17,314,405,321,375,291,308,324,318,402,317,14,87,178];
+      ctx.beginPath();
+      mouthIdx.forEach((id,i)=>{ const p=pts[id]; if(!p) return; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+      ctx.closePath();
+      ctx.stroke();
+
+    } catch(e){ /* ignore and fallback to simple */ }
   } else {
-    fallbackWire(landmarks, color, lineWidth);
+    // fallback simple: jaw only
+    ctx.beginPath();
+    for (let i=0;i<=16;i++){ const p=pts[i]; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
+    ctx.stroke();
   }
-  ctx.restore();
-}
 
-function fallbackWire(pts, color, lw) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lw;
-  // connect jaw contour (0..16)
-  ctx.beginPath();
-  for (let i=0;i<=16;i++){
-    const p = pts[i];
-    if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
-  }
-  ctx.stroke();
-  // connect nose bridge 1..4
-  ctx.beginPath();
-  for (let i=1;i<=4;i++){ const p=pts[i]; if (i===1) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
-  ctx.stroke();
-}
-
-/* draw limited landmarks dots on strategic points */
-function drawKeyPoints(pts){
-  ctx.save();
-  ctx.fillStyle = '#ffb3ff';
-  ctx.globalAlpha = 0.95;
-  const keyIndices = [1, 4, 33, 133, 362, 263, 61, 291, 199, 152]; // nose, eyes, mouth corners, chin etc
-  for (const i of keyIndices){
-    if (!pts[i]) continue;
-    const p = pts[i];
+  // key small neon dots on select points
+  ctx.fillStyle = 'rgba(255,90,180,0.95)'; // pinkish
+  const keys = [1, 33, 263, 61, 291, 13, 14, 152];
+  for (const id of keys){
+    const p = pts[id];
+    if (!p) continue;
     ctx.beginPath();
     ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2);
     ctx.fill();
   }
+
   ctx.restore();
 }
 
-/* scan sweep effect: vertical moving line with glow that highlights triangles under it */
-let scanPos = 0;
-let scanDir = 1;
-function drawSweep(width=overlay.width/dpr){
-  // normalize sweep pos between 0..1
-  scanPos += 0.006 * scanDir;
-  if (scanPos > 1) { scanPos = 1; scanDir = -1; }
-  if (scanPos < 0) { scanPos = 0; scanDir = 1; }
-  const x = scanPos * (overlay.width/dpr);
-  // glow line
-  const grad = ctx.createLinearGradient(x-140,0,x+140,0);
-  grad.addColorStop(0, 'rgba(0,255,210,0.00)');
-  grad.addColorStop(0.45, 'rgba(0,255,210,0.06)');
-  grad.addColorStop(0.5, 'rgba(0,255,210,0.12)');
-  grad.addColorStop(0.55, 'rgba(0,255,210,0.06)');
-  grad.addColorStop(1, 'rgba(0,255,210,0.00)');
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = grad;
-  ctx.fillRect(x-140, 0, 280, overlay.height/dpr);
-  ctx.restore();
-}
+// compute emotion heuristics & return result { label, scoreObj }
+function evaluateEmotion(pts){
+  // landmarks used (MediaPipe indices):
+  // eyes: 33 (left outer), 263 (right outer)
+  // mouth corners: 61 (left), 291 (right)
+  // upper lip: 13, lower lip: 14 (approx)
+  // brows inner approximations: 105 (left inner brow), 334 (right inner brow) [If missing, fallback]
+  const leftEye = pts[33], rightEye = pts[263];
+  const leftMouth = pts[61], rightMouth = pts[291];
+  const upperLip = pts[13], lowerLip = pts[14];
+  const browL = pts[105] || pts[65];
+  const browR = pts[334] || pts[295];
 
-/* subtle hull glow around face */
-function drawHullGlow(pts) {
-  // compute convex hull of provided pts (simple monotone chain)
-  function convexHull(points) {
-    if (points.length <= 3) return points.slice();
-    const a = points.slice().sort((p,q)=> p.x===q.x ? p.y-q.y : p.x-q.x);
-    const cross = (o,i,j) => (i.x-o.x)*(j.y-o.y) - (i.y-o.y)*(j.x-o.x);
-    const lower = [];
-    for (const p of a) {
-      while (lower.length >=2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-      lower.push(p);
-    }
-    const upper = [];
-    for (let i = a.length-1; i>=0; --i) {
-      const p = a[i];
-      while (upper.length >=2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-      upper.push(p);
-    }
-    upper.pop(); lower.pop();
-    return lower.concat(upper);
+  if (!leftEye || !rightEye || !leftMouth || !rightMouth) return { label:'Neutral', reason:'Pocos landmarks', scores:{} };
+
+  const eyeDist = dist(leftEye, rightEye) || 1.0; // scale basis
+
+  const mouthWidth = dist(leftMouth, rightMouth);
+  const mouthOpen = (upperLip && lowerLip) ? dist(upperLip, lowerLip) : 0;
+
+  // smile factor: mouthWidth normalized by eye distance
+  const smileFactor = mouthWidth / eyeDist;
+
+  // openness factor normalized
+  const openFactor = mouthOpen / eyeDist;
+
+  // brow metric: average eyebrow y relative to eye y (if available)
+  let browMetric = 0;
+  if (browL && browR && leftEye && rightEye){
+    const eyeY = (leftEye.y + rightEye.y) / 2;
+    const browY = (browL.y + browR.y) / 2;
+    // negative when brows lower (browY closer to eyeY), positive when raised
+    browMetric = (eyeY - browY) / eyeDist; // positive -> brow above eyes; negative -> brow lower (frown)
   }
-  const hull = convexHull(pts);
-  if (!hull || hull.length < 3) return;
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(hull[0].x, hull[0].y);
-  for (let i=1;i<hull.length;i++) ctx.lineTo(hull[i].x, hull[i].y);
-  ctx.closePath();
-  ctx.lineWidth = 2.8;
-  ctx.strokeStyle = 'rgba(0,230,200,0.07)';
-  ctx.stroke();
-  ctx.restore();
+
+  // thresholds from UI
+  const smileThresh = parseFloat(smileThreshEl.value);
+  const openThresh = parseFloat(openThreshEl.value);
+  const browThresh = parseFloat(browThreshEl.value);
+
+  // simple logic:
+  // if smileFactor > smileThresh and openFactor < some high (not yawning) => happy
+  // if browMetric < browThresh (meaning brows lower / negative beyond threshold) and smileFactor small => angry
+  // else neutral
+
+  const isSmiling = (smileFactor > smileThresh) && (openFactor < (openThresh * 2.2)); // avoid wide-open mouth false positives
+  const isAngry = (browMetric < -Math.abs(browThresh)) && (smileFactor < smileThresh * 0.95);
+
+  let label = 'Neutral';
+  if (isSmiling) label = 'Feliz';
+  else if (isAngry) label = 'Molesto';
+
+  return {
+    label,
+    scores: { smileFactor, openFactor, browMetric, thresholds:{smileThresh, openThresh, browThresh} }
+  };
 }
 
-/* ===========================
-   FaceMesh setup and camera
-   =========================== */
+// render big central HUD
+function showBigResult(label){
+  if (label === 'Feliz'){
+    bigIcon.className = 'big-status';
+    bigIcon.innerHTML = '😊';
+    bigText.textContent = 'FELIZ';
+  } else if (label === 'Molesto'){
+    bigIcon.className = 'big-status angry';
+    bigIcon.innerHTML = '😠';
+    bigText.textContent = 'MOLESTO';
+  } else {
+    bigIcon.className = 'big-status';
+    bigIcon.innerHTML = '—';
+    bigText.textContent = 'Neutral';
+  }
+}
+
+// main results callback for MediaPipe
+async function onResults(results){
+  if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length){
+    // clear and show waiting
+    ctx.clearRect(0,0,CANV.width/dpr,CANV.height/dpr);
+    footerState.textContent = 'Esperando rostro';
+    showBigResult('Neutral');
+    return;
+  }
+
+  resizeCanvasToVideo();
+
+  // normalized landmarks -> pixel coords
+  const pixels = toPixels(results.multiFaceLandmarks[0]);
+  const sm = smooth(prevSmoothed, pixels, 0.75);
+  prevSmoothed = sm;
+
+  // draw mesh (minimal)
+  drawFaceMesh(sm);
+
+  // evaluate emotion
+  const out = evaluateEmotion(sm);
+  footerState.textContent = out.label;
+  showBigResult(out.label);
+
+  // optionally show small debug numbers (remove for clean)
+  // ctx.save(); ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='11px Inter'; ctx.fillText(`smile:${out.scores.smileFactor.toFixed(2)} open:${out.scores.openFactor.toFixed(2)} brow:${out.scores.browMetric.toFixed(3)}`, 12, 22); ctx.restore();
+}
+
+// init FaceMesh
 async function initFaceMesh(){
-  faceMesh = new FaceMesh({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-  });
+  faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
   faceMesh.setOptions({
     maxNumFaces: 1,
     refineLandmarks: true,
     selfieMode: true,
-    minDetectionConfidence: 0.55,
+    minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
   });
   faceMesh.onResults(onResults);
 }
 
-/* Core results handler */
-function onResults(results){
-  if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
-    // no face
-    clear();
-    statusText.textContent = 'Esperando rostro…';
-    subStatus.textContent = 'Ajusta iluminación y ubicación frente a la cámara';
-    return;
-  }
-  // ensure canvas sized to current video
-  resizeCanvasToVideo();
+// Start camera
+async function startCamera(){
+  startBtn.disabled = true;
+  footerState.textContent = 'Solicitando cámara...';
+  try {
+    if (!faceMesh) await initFaceMesh();
 
-  statusText.textContent = 'Rostro detectado';
-  subStatus.textContent = 'Escaneando — mantén la posición';
-
-  // convert normalized to pixel coordinates
-  const pixels = toPixels(results.multiFaceLandmarks[0]);
-
-  // smooth
-  const sm = smoothLandmarks(prevSmoothed, pixels, 0.75);
-  prevSmoothed = sm;
-
-  // Draw
-  clear();
-  // mirror: because video is mirrored via CSS we can paint directly in pixel coords
-  // 1) hull glow
-  drawHullGlow(sm);
-
-  // 2) sweep effect behind wire (draw first)
-  drawSweep();
-
-  // 3) wireframe (use limited lines to remain elegant)
-  drawWire(sm, 'rgba(110,240,217,0.95)', 0.6);
-
-  // 4) keypoints (few strategic)
-  drawKeyPoints(sm);
-
-  // 5) post subtle mask: optional gentle overlay under mouth
-  // (not a full png mapping — keeps performance safe)
-  const idxN = 1, idxC = 152;
-  if (sm[idxN] && sm[idxC]) {
-    const cx = (sm[234].x + sm[454].x) / 2;
-    const cy = sm[idxN].y + (sm[idxC].y - sm[idxN].y) * 0.45;
-    const faceW = Math.hypot(sm[454].x - sm[234].x, sm[454].y - sm[234].y);
-    ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = '#008f7a';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, faceW*0.43, (sm[idxC].y-sm[idxN].y)*0.52, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.restore();
+    const cam = new Camera(VIDEO, {
+      onFrame: async () => { await faceMesh.send({ image: VIDEO }); },
+      width: 720,
+      height: 560,
+      facingMode: 'user'
+    });
+    camera = cam;
+    await camera.start();
+    running = true;
+    stopBtn.disabled = false;
+    footerState.textContent = 'Cámara activa';
+    showBigResult('Neutral');
+    VIDEO.addEventListener('loadedmetadata', ()=> resizeCanvasToVideo(), { once:true });
+  } catch (err) {
+    console.error('Error al iniciar cámara', err);
+    footerState.textContent = 'Error cámara: ' + (err?.message || err);
+    startBtn.disabled = false;
   }
 }
 
-/* ===========================
-   Start/Stop controls
-   =========================== */
-startButton.addEventListener('click', async () => {
-  startButton.disabled = true;
-  statusText.textContent = 'Solicitando permiso de cámara...';
-  try {
-    // init faceMesh if not
-    if (!faceMesh) await initFaceMesh();
-
-    // start camera via MediaPipe Camera util
-    camera = new Camera(video, {
-      onFrame: async () => { await faceMesh.send({ image: video }); },
-      width: 720, height: 560, facingMode: 'user'
-    });
-
-    await camera.start();
-    running = true;
-    startScreen.style.display = 'none';
-    statusText.textContent = 'Cámara activa';
-    subStatus.textContent = 'Buscando rostro...';
-    // ensure canvas initial size
-    video.addEventListener('loadedmetadata', () => resizeCanvasToVideo(), { once: true });
-  } catch (err) {
-    console.error(err);
-    statusText.textContent = 'Error cámara: ' + (err?.message || err);
-    startButton.disabled = false;
-  }
-});
-
-stopBtn.addEventListener('click', () => {
-  if (camera) camera.stop();
+// Stop camera
+function stopCamera(){
+  if (camera) { try{ camera.stop(); } catch(e){} camera = null; }
   running = false;
-  startScreen.style.display = 'flex';
-  startButton.disabled = false;
-  statusText.textContent = 'Detenido';
-  subStatus.textContent = 'Pulsa Iniciar Escaneo';
-  clear();
-});
+  prevSmoothed = null;
+  ctx.clearRect(0,0,CANV.width/dpr,CANV.height/dpr);
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  footerState.textContent = 'Detenido';
+  showBigResult('Neutral');
+}
 
-/* ensure canvas resizes on rotate/resize */
-window.addEventListener('resize', () => { if (video && video.videoWidth) resizeCanvasToVideo(); });
+// events
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
 
-/* initial message */
-statusText.textContent = 'Listo';
-subStatus.textContent = 'Pulsa "Iniciar Escaneo" para comenzar';
+// resize on orientation change
+window.addEventListener('resize', () => { if (VIDEO && VIDEO.videoWidth) resizeCanvasToVideo(); });
+
+// initial UI state
+footerState.textContent = 'detenido';
+showBigResult('Neutral');
 
 </script>
 </body>
