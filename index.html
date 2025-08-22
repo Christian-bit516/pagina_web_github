@@ -1,227 +1,264 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mascarilla AR profesional con MediaPipe Face Mesh</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mascarilla profesional — Mesh + Landmarks (MediaPipe)</title>
   <style>
-    :root { color-scheme: dark light; }
+    :root{color-scheme:dark light}
     *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Ubuntu,Cantarell,Arial;background:#0b1120;color:#e5e7eb}
-    header{position:sticky;top:0;z-index:10;display:flex;gap:.75rem;align-items:center;padding:0.85rem 1rem;background:#0f172a;border-bottom:1px solid #1f2937}
-    h1{margin:0;font-size:clamp(1rem,2.2vw,1.3rem)}
-    .status{font-weight:700;font-variant-numeric:tabular-nums}
-    main{max-width:960px;margin:0 auto;padding:1rem}
-    .stage{position:relative;width:min(100%,820px);margin:0 auto;border:1px solid #1f2937;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3}
-    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)} /* espejo para selfie */
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:#0b1220;color:#e5e7eb;display:flex;flex-direction:column;min-height:100vh}
+    header{padding:.9rem 1rem;background:#0f172a;border-bottom:1px solid #111827;display:flex;align-items:center;gap:.75rem}
+    h1{margin:0;font-size:1.05rem}
+    .status{margin-left:auto;font-weight:700;color:#93c5fd}
+    main{flex:1;display:flex;flex-direction:column;align-items:center;padding:1rem}
+    .stage{position:relative;width:min(100%,980px);max-width:980px;aspect-ratio:4/3;border-radius:12px;overflow:hidden;border:1px solid #1f2937;background:#000}
+    video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);} /* espejo para selfie */
     canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-    .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;margin:1rem auto;max-width:820px}
-    .card{background:#0f172a;border:1px solid #1f2937;border-radius:14px;padding:.75rem}
-    .row{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
-    .btn{appearance:none;border:0;border-radius:12px;padding:.7rem 1rem;font-weight:700;cursor:pointer;background:#2563eb;color:#fff;box-shadow:0 10px 20px rgba(37,99,235,.25)}
-    .btn.secondary{background:#374151;box-shadow:none}
-    .hint{opacity:.85;font-size:.9rem}
-    a{color:#93c5fd}
+    .controls{width:min(980px,100%);display:flex;gap:.5rem;justify-content:center;margin-top:1rem;flex-wrap:wrap}
+    .btn{padding:.6rem 1rem;border-radius:10px;border:0;font-weight:700;cursor:pointer;background:#2563eb;color:white}
+    .btn.secondary{background:#374151}
+    label{display:flex;align-items:center;gap:.4rem;color:#cbd5e1}
+    .small{font-size:.9rem;color:#94a3b8}
   </style>
-  <!-- MediaPipe Face Mesh + utilidades de cámara -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <!-- MediaPipe Face Mesh libs -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
   <header>
-    <h1>Mascarilla AR con Face Mesh (468 landmarks)</h1>
-    <span class="status" id="status">Cargando…</span>
+    <h1>Mascarilla profesional — Triangulación (MediaPipe FaceMesh)</h1>
+    <div class="status" id="status">Cargando librerías…</div>
   </header>
 
   <main>
-    <div class="stage">
+    <div class="stage" role="application" aria-label="Video stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
+
     <div class="controls">
-      <div class="card row">
-        <button id="startBtn" class="btn">Iniciar cámara</button>
-        <button id="stopBtn" class="btn secondary" disabled>Detener</button>
-      </div>
-      <div class="card row">
-        <label class="row" style="gap:.5rem">
-          <input id="showLandmarks" type="checkbox" />
-          <span>Mostrar landmarks</span>
-        </label>
-        <label>Escala
-          <input id="scale" type="range" min="0.8" max="1.6" step="0.02" value="1.1" />
-        </label>
-        <label>Altura
-          <input id="height" type="range" min="0.9" max="2.0" step="0.02" value="1.35" />
-        </label>
-      </div>
-      <div class="card hint">
-        Consejo: usa <b>HTTPS</b> o <code>localhost</code> para que Android/iOS permitan la cámara. Iluminación frontal suave ayuda al seguimiento.
-      </div>
+      <button id="startBtn" class="btn">Iniciar cámara</button>
+      <button id="stopBtn" class="btn secondary" disabled>Detener</button>
+      <label><input id="showMesh" type="checkbox" checked/> Mostrar mesh</label>
+      <label><input id="showPoints" type="checkbox" checked/> Mostrar puntos</label>
+      <label class="small">Opacidad: <input id="maskOpacity" type="range" min="0.05" max="0.9" step="0.05" value="0.45"/></label>
     </div>
   </main>
 
   <script>
-    // PNG de mascarilla con transparencia (reemplazable por tu propia imagen)
-    // Opción 1 (quirúrgica azul):
-    const MASK_PNG_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
-    // Opción 2 (negra KN95):
-    // const MASK_PNG_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/kn95_black.png';
+    // --- Helper: convex hull (Monotone chain) para polygonar la parte inferior de la cara ---
+    function convexHull(points) {
+      // points: [{x,y}, ...] return hull CCW
+      if (points.length <= 3) return points.slice();
+      points = points.slice().sort((a,b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+      const cross = (o,a,b) => (a.x - o.x)*(b.y - o.y) - (a.y - o.y)*(b.x - o.x);
+      const lower = [];
+      for (const p of points) {
+        while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
+        lower.push(p);
+      }
+      const upper = [];
+      for (let i = points.length-1; i >= 0; --i) {
+        const p = points[i];
+        while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
+        upper.push(p);
+      }
+      upper.pop(); lower.pop();
+      return lower.concat(upper);
+    }
 
-    class ARMask {
-      constructor(){
-        this.video = document.getElementById('video');
-        this.canvas = document.getElementById('overlay');
-        this.ctx = this.canvas.getContext('2d');
-        this.status = document.getElementById('status');
-        this.btnStart = document.getElementById('startBtn');
-        this.btnStop = document.getElementById('stopBtn');
-        this.showLandmarks = document.getElementById('showLandmarks');
-        this.scaleInput = document.getElementById('scale');
-        this.heightInput = document.getElementById('height');
+    (function(){
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('overlay');
+      const ctx = canvas.getContext('2d');
+      const statusEl = document.getElementById('status');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const showMeshChk = document.getElementById('showMesh');
+      const showPointsChk = document.getElementById('showPoints');
+      const maskOpacity = document.getElementById('maskOpacity');
 
-        this.isActive = false;
-        this.camera = null;
-        this.maskImg = new Image();
-        this.maskImg.crossOrigin = 'anonymous';
-        this.maskImg.src = MASK_PNG_URL;
-        this.maskReady = false;
-        this.maskImg.onload = () => this.maskReady = true;
+      let camera = null;
+      let faceMesh = null;
+      let active = false;
 
-        this.setup();
-        this.bind();
+      function resizeCanvasToVideo() {
+        const dpr = window.devicePixelRatio || 1;
+        const w = video.videoWidth || video.clientWidth || 640;
+        const h = video.videoHeight || video.clientHeight || 480;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        canvas.style.width = `${video.clientWidth || w}px`;
+        canvas.style.height = `${video.clientHeight || h}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
 
-      setup(){
-        // Configurar FaceMesh
-        this.faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-        this.faceMesh.setOptions({
+      async function setupFaceMesh() {
+        faceMesh = new FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+
+        faceMesh.setOptions({
           maxNumFaces: 1,
-          refineLandmarks: true, // labios y ojos más finos
-          selfieMode: true,      // coords pensadas para selfie
+          refineLandmarks: true,
+          selfieMode: true,
           minDetectionConfidence: 0.5,
           minTrackingConfidence: 0.5
         });
-        this.faceMesh.onResults((results) => this.onResults(results));
-        this.status.textContent = 'Listo — pulsa Iniciar cámara';
+
+        faceMesh.onResults(onResults);
       }
 
-      bind(){
-        this.btnStart.addEventListener('click', () => this.start());
-        this.btnStop.addEventListener('click', () => this.stop());
-        window.addEventListener('resize', () => this.resize());
-      }
-
-      async start(){
-        try{
-          this.btnStart.disabled = true;
-          this.video.playsInline = true;
-          // CameraUtils gestiona getUserMedia y frames
-          this.camera = new Camera(this.video, {
-            onFrame: async () => { await this.faceMesh.send({ image: this.video }); },
-            width: 960,
-            height: 720,
+      async function startCamera() {
+        startBtn.disabled = true;
+        statusEl.textContent = 'Iniciando cámara...';
+        try {
+          camera = new Camera(video, {
+            onFrame: async () => { await faceMesh.send({image: video}); },
+            width: 1280,
+            height: 720
           });
-          await this.camera.start();
-          this.isActive = true;
-          this.btnStop.disabled = false;
-          this.status.textContent = 'Cámara activa';
-          this.resize();
-        } catch(err){
+          await camera.start();
+          active = true;
+          stopBtn.disabled = false;
+          statusEl.textContent = 'Cámara activa';
+          resizeCanvasToVideo();
+        } catch (err) {
           console.error(err);
-          this.status.textContent = (err?.name === 'NotAllowedError') ? 'Permiso de cámara denegado' : 'No se pudo iniciar la cámara';
-          this.btnStart.disabled = false;
+          statusEl.textContent = err?.name === 'NotAllowedError' ? 'Permiso denegado' : 'Error iniciando cámara';
+          startBtn.disabled = false;
         }
       }
 
-      stop(){
-        this.isActive = false;
-        if(this.camera){ this.camera.stop(); this.camera = null; }
-        this.ctx.setTransform(1,0,0,1,0,0);
-        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-        this.btnStop.disabled = true;
-        this.btnStart.disabled = false;
-        this.status.textContent = 'Cámara detenida';
+      function stopCamera() {
+        active = false;
+        if (camera) { camera.stop(); camera = null; }
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        stopBtn.disabled = true;
+        startBtn.disabled = false;
+        statusEl.textContent = 'Cámara detenida';
       }
 
-      resize(){
+      // Dibuja: mesh (triangulación), puntos y máscara rellenada (convex hull de la zona inferior)
+      function onResults(results) {
+        resizeCanvasToVideo();
+        ctx.save();
+        // reflejar canvas para coincidir con video espejo
         const dpr = window.devicePixelRatio || 1;
-        const w = this.video.videoWidth || this.video.clientWidth || 640;
-        const h = this.video.videoHeight || this.video.clientHeight || 480;
-        this.canvas.width = Math.round(w * dpr);
-        this.canvas.height = Math.round(h * dpr);
-        this.canvas.style.width = `${this.video.clientWidth || w}px`;
-        this.canvas.style.height = `${this.video.clientHeight || h}px`;
-        this.ctx.setTransform(dpr,0,0,dpr,0,0);
-      }
+        ctx.translate(canvas.width / dpr, 0);
+        ctx.scale(-1, 1);
 
-      onResults(results){
-        if(!this.isActive) return;
-        this.ctx.save();
-        // el video está en espejo (CSS), reflejamos el canvas para coincidir visualmente
-        const dpr = window.devicePixelRatio || 1;
-        this.ctx.translate(this.canvas.width / dpr, 0);
-        this.ctx.scale(-1, 1);
-        this.ctx.clearRect(0,0,this.canvas.width / dpr, this.canvas.height / dpr);
+        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
-        if(results.multiFaceLandmarks && results.multiFaceLandmarks.length){
-          const lm = results.multiFaceLandmarks[0];
-          // Puntos de referencia (índices de MediaPipe FaceMesh)
-          // 234: mejilla izq, 454: mejilla der, 1: punta de la nariz, 152: mentón
-          const L = lm[234];
-          const R = lm[454];
-          const NOSE = lm[1];
-          const CHIN = lm[152];
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          const landmarks = results.multiFaceLandmarks[0]; // 468 landmarks, normalized
 
-          // Convertir a px (image coords ya están normalizados [0..1])
-          const W = this.canvas.width / dpr;
-          const H = this.canvas.height / dpr;
-          const toPx = (p) => ({ x: p.x * W, y: p.y * H });
-          const pL = toPx(L), pR = toPx(R), pN = toPx(NOSE), pC = toPx(CHIN);
+          const W = canvas.width / dpr;
+          const H = canvas.height / dpr;
+          // convertir a px
+          const pts = landmarks.map(p => ({ x: p.x * W, y: p.y * H }));
 
-          // Medidas base
-          const dx = pR.x - pL.x; const dy = pR.y - pL.y;
-          const faceWidth = Math.hypot(dx, dy);
-          const faceAngle = Math.atan2(dy, dx); // rotación de la cara
-          const noseToChin = Math.hypot(pC.x - pN.x, pC.y - pN.y);
-
-          // Parámetros ajustables
-          const scaleW = parseFloat(this.scaleInput.value);   // ancho relativo
-          const scaleH = parseFloat(this.heightInput.value);  // alto relativo
-
-          const maskW = faceWidth * scaleW;
-          const maskH = noseToChin * scaleH;
-
-          // Centro donde anclar la mascarilla: un poco por debajo de la nariz
-          const cx = (pL.x + pR.x) / 2; // centro entre mejillas
-          const cy = pN.y + (pC.y - pN.y) * 0.45; // entre nariz y mentón
-
-          if(this.maskReady){
-            this.ctx.save();
-            this.ctx.translate(cx, cy);
-            this.ctx.rotate(faceAngle);
-            // dibujar centrada
-            this.ctx.drawImage(this.maskImg, -maskW/2, -maskH*0.45, maskW, maskH);
-            this.ctx.restore();
+          // 1) Dibujar la tesselación (triangulación) en amarillo (usa drawing_utils.FACEMESH_TESSELATION)
+          if (showMeshChk.checked) {
+            // drawing_utils.drawConnectors acepta: ctx, landmarks, connectorList
+            // MediaPipe exposes FACEMESH_TESSELATION and other constants
+            const opts = {color: '#facc15', lineWidth: 0.8}; // amarillo
+            // draw tesselation (triangulation lines)
+            // window.FACEMESH_TESSELATION es definido por drawing_utils export
+            drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, opts);
           }
 
-          // Opcional: visualizar landmarks para depurar
-          if(this.showLandmarks.checked){
-            this.ctx.fillStyle = '#10b981';
-            for(const p of lm){ this.ctx.beginPath(); this.ctx.arc(p.x*W, p.y*H, 1.6, 0, Math.PI*2); this.ctx.fill(); }
+          // 2) Dibujar puntos (pequeños círculos) en amarillo
+          if (showPointsChk.checked) {
+            ctx.fillStyle = '#facc15';
+            for (const p of pts) {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, 1.6, 0, Math.PI*2);
+              ctx.fill();
+            }
           }
 
-          this.status.textContent = 'Rostro detectado';
+          // 3) Dibujar máscara rellena basada en convex hull de la mitad inferior:
+          // Seleccionamos puntos que están por debajo de la nariz (landmark 1) y alrededor
+          const noseTip = pts[1];
+          // Recolectamos puntos cuyo y > noseTip.y (parte inferior) y que estén dentro del ancho facial razonable
+          const lower = pts.filter(p => p.y > noseTip.y - (H*0.02));
+          // También filtramos por coordenadas x entre mejillas 234 y 454 si existen:
+          const leftCheek = pts[234] || pts[127] || pts[100];
+          const rightCheek = pts[454] || pts[357] || pts[200];
+          const minX = Math.min(leftCheek.x, rightCheek.x) - 30;
+          const maxX = Math.max(leftCheek.x, rightCheek.x) + 30;
+          const lowerFiltered = lower.filter(p => p.x >= minX && p.x <= maxX);
+
+          // Si no hay suficientes puntos, fallback: tomar un rango de landmarks típicos del borde inferior (152 es mentón)
+          let hullPts = [];
+          if (lowerFiltered.length >= 10) {
+            hullPts = convexHull(lowerFiltered);
+          } else {
+            // fallback using approximate jawline indices (loop from 10..  200 ) - use known face contour indices slice
+            const jawIdx = [10, 109, 67, 106, 66, 105, 63, 70, 107, 334, 296, 293, 300, 293, 301, 291, 375, 321, 405, 314];
+            const fallback = jawIdx.map(i => pts[i]).filter(Boolean);
+            hullPts = convexHull(fallback);
+          }
+
+          if (hullPts && hullPts.length >= 3) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(hullPts[0].x, hullPts[0].y);
+            for (let i = 1; i < hullPts.length; i++) ctx.lineTo(hullPts[i].x, hullPts[i].y);
+            ctx.closePath();
+            ctx.globalAlpha = parseFloat(maskOpacity.value);
+            ctx.fillStyle = '#0ea5e9'; // azul profesional
+            ctx.fill();
+            // borde suave
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          statusEl.textContent = 'Rostro detectado';
         } else {
-          this.status.textContent = 'Esperando rostro…';
+          statusEl.textContent = 'Esperando rostro…';
         }
 
-        this.ctx.restore();
+        ctx.restore();
       }
-    }
 
-    window.addEventListener('DOMContentLoaded', () => new ARMask());
+      // Iniciar todo
+      (async function init() {
+        await setupFaceMesh();
+        // drawConnectors etc are global; make sure drawing utils exported
+        statusEl.textContent = 'Listo — pulsa "Iniciar cámara"';
+      })();
+
+      // event bindings
+      startBtn.addEventListener('click', async () => {
+        if (!faceMesh) await setupFaceMesh();
+        await startCamera();
+      });
+      stopBtn.addEventListener('click', stopCamera);
+
+      // util wrapper: alias to drawing_utils functions if not in global scope
+      // drawing_utils exports: drawConnectors, drawLandmarks, FACEMESH_TESSELATION...
+      // In some setups they are global identifiers — if not, reference via window.
+      const drawConnectors = window.drawConnectors || window.drawingUtils?.drawConnectors || window.drawConnectors;
+      const FACEMESH_TESSELATION = window.FACEMESH_TESSELATION || window.drawingUtils?.FACEMESH_TESSELATION || window.FACEMESH_TESSELATION;
+
+      // If the constants aren't attached to window (rare), attempt to import from module (but CDN script does set these globally).
+      if (!drawConnectors || !FACEMESH_TESSELATION) {
+        console.warn('drawConnectors or FACEMESH_TESSELATION no están disponibles globalmente. Asegúrate de cargar drawing_utils correctamente.');
+      }
+
+      // resize handler for responsiveness
+      window.addEventListener('resize', () => { if (active) resizeCanvasToVideo(); });
+
+    })();
   </script>
 </body>
 </html>
