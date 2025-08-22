@@ -1,362 +1,381 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
+<meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Detector de Emoción — Feliz / Molesto (FaceMesh)</title>
+<title>Mascarilla: Warping Triangular (Profesional)</title>
 <style>
-  :root{
-    --bg:#02050a;
-    --panel:rgba(8,12,18,0.6);
-    --neon:#00f0d0;
-    --accent:#ff6b6b;
-  }
-  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,Roboto,Arial;color:#e8f7f2}
+  html,body{height:100%;margin:0;background:#05060a;color:#e6f6f2;font-family:Inter,system-ui,Arial}
   .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
   video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
   canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-  /* center UI */
-  .ui-panel{position:fixed;left:18px;top:18px;background:var(--panel);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);backdrop-filter:blur(6px)}
-  .center-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;display:flex;flex-direction:column;align-items:center;gap:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:18px;border-radius:14px;border:1px solid rgba(255,255,255,0.04);box-shadow:0 20px 40px rgba(0,0,0,0.6)}
-  .big-status{font-size:34px;font-weight:800;color:var(--neon);text-shadow:0 4px 20px rgba(0,240,208,0.08);display:flex;align-items:center;gap:12px}
-  .big-status.angry{color:var(--accent); text-shadow:0 6px 26px rgba(255,107,107,0.12)}
-  .start-btn{padding:12px 18px;border-radius:12px;border:0;background:linear-gradient(90deg,#00f0d0,#00a6ff);color:#012527;font-weight:800;cursor:pointer}
-  .stop-btn{padding:10px 14px;border-radius:10px;border:0;background:#24303a;color:#fff;cursor:pointer}
-  .small{font-size:13px;color:#9fb7b2}
-  .controls{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-  .range{width:240px}
-  .footer-note{position:fixed;left:18px;bottom:18px;color:#9fb7b2;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
-  @media (max-width:700px){ .ui-panel{left:8px;top:8px} .center-card{width:92vw} .range{width:160px} }
+  .ui{position:fixed;left:12px;top:12px;z-index:80;background:rgba(6,10,14,0.6);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+  .ui button{padding:8px 12px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer}
+  .ui .secondary{background:#374151;margin-left:8px}
+  .sl{width:160px}
+  .centerMsg{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:90;background:rgba(0,0,0,0.45);padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);font-weight:700;color:#7ef0d6}
+  .hint{position:fixed;left:12px;bottom:12px;color:#9fb7b2;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
 </style>
 
-<!-- MediaPipe FaceMesh -->
+<!-- MediaPipe -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 </head>
 <body>
   <div class="stage" id="stage">
-    <video id="video" playsinline autoplay muted></video>
+    <video id="video" playsinline muted></video>
     <canvas id="overlay"></canvas>
   </div>
 
-  <div class="ui-panel" aria-hidden="false">
-    <div style="font-weight:800;margin-bottom:6px">Detector de Emoción (Demo)</div>
-    <div class="small">Ajusta si la cámara/rostro no encaja. Sirve por HTTPS o localhost en móvil.</div>
-  </div>
-
-  <div class="center-card" id="centerCard">
-    <div id="bigIcon" class="big-status">—</div>
-    <div id="bigText" style="font-size:18px;font-weight:700;color:#ddeee9">Pulsa "Iniciar Escaneo"</div>
-    <div style="display:flex;gap:8px;margin-top:6px">
-      <button id="startBtn" class="start-btn">Iniciar Escaneo</button>
-      <button id="stopBtn" class="stop-btn" disabled>Detener</button>
-    </div>
-
-    <div class="controls" style="margin-top:6px">
-      <div class="small">Umbrales (ajusta si es necesario)</div>
-      <label class="small">Umbral sonrisa: <input id="smileThresh" class="range" type="range" min="0.20" max="0.8" step="0.01" value="0.41"></label>
-      <label class="small">Umbral apertura de boca: <input id="openThresh" class="range" type="range" min="0.02" max="0.5" step="0.01" value="0.10"></label>
-      <label class="small">Umbral cejas (molestia): <input id="browThresh" class="range" type="range" min="-0.03" max="0.08" step="0.005" value="0.01"></label>
+  <div class="ui" role="toolbar">
+    <div style="margin-bottom:8px"><button id="startBtn">Iniciar Escaneo</button><button id="stopBtn" class="secondary" disabled>Detener</button></div>
+    <div style="font-size:13px;margin-bottom:6px">Ajustes máscara</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <label class="small">Scale <input id="maskScale" class="sl" type="range" min="0.7" max="1.6" step="0.01" value="1.0"></label>
+      <label class="small">Y offset <input id="maskY" class="sl" type="range" min="-0.5" max="0.5" step="0.01" value="0.0"></label>
+      <label class="small">X offset <input id="maskX" class="sl" type="range" min="-0.5" max="0.5" step="0.01" value="0.0"></label>
     </div>
   </div>
 
-  <div class="footer-note" id="footerNote">Estado: <span id="state">detenido</span></div>
+  <div class="centerMsg" id="centerMsg">Pulsa "Iniciar Escaneo" para comenzar</div>
+  <div class="hint">Servir por HTTPS o usar localhost para cámara en móvil</div>
 
 <script>
-/*
-  Detector de emoción simple basado en MediaPipe FaceMesh landmarks.
-  Heurísticas usadas:
-   - smileScore = mouthWidth / eyeDistance (normalizado) -> mayor => sonrisa
-   - openMouth = mouthOpen / eyeDistance -> detecta si la boca está abierta (podría indicar risa open)
-   - browRise = average(eyebrowY relative to eyeY) -> cejas bajas (valor pequeño o negativo) -> posible enfado/ceño
+(async function(){
+  // DOM
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d', {alpha:true});
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const centerMsg = document.getElementById('centerMsg');
+  const maskScaleEl = document.getElementById('maskScale');
+  const maskYEl = document.getElementById('maskY');
+  const maskXEl = document.getElementById('maskX');
 
-  NOTA: si quieres máxima precisión usar un modelo ML entrenado (p.ej. CNN sobre rostro).
-  Este demo entrega una solución robusta en navegador y permite ajustes por sliders.
-*/
+  // FaceMesh indices we use
+  const IDX = { leftCheek:234, rightCheek:454, noseTip:1, chin:152 };
 
-const VIDEO = document.getElementById('video');
-const CANV = document.getElementById('overlay');
-const ctx = CANV.getContext('2d');
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const bigIcon = document.getElementById('bigIcon');
-const bigText = document.getElementById('bigText');
-const footerState = document.getElementById('state');
+  // load a good transparent mask PNG (you can change URL to your own)
+  const MASK_URL = 'https://raw.githubusercontent.com/johndcobb/mediapipe-facemesh-mask-assets/main/masks/surgical_blue.png';
+  const maskImg = new Image();
+  maskImg.crossOrigin = 'anonymous';
+  maskImg.src = MASK_URL;
+  await new Promise(r => { maskImg.onload = r; maskImg.onerror = r; });
 
-const smileThreshEl = document.getElementById('smileThresh');
-const openThreshEl = document.getElementById('openThresh');
-const browThreshEl = document.getElementById('browThresh');
+  // Triangular source definition within the mask image (in mask pixel coords).
+  // We'll split the mask into two source triangles: top-left, top-right, bottom-center.
+  // Choose source triangle points that cover the mask nicely.
+  // You may adjust these if you use a different mask PNG.
+  const sW = maskImg.width;
+  const sH = maskImg.height;
+  // Define source triangle A (left) and B (right)
+  // Using three source points each (x,y in mask pixel space)
+  const srcA = [{x: sW*0.12, y: sH*0.28}, {x: sW*0.5, y: sH*0.12}, {x: sW*0.12, y: sH*0.85}];
+  const srcB = [{x: sW*0.88, y: sH*0.28}, {x: sW*0.5, y: sH*0.12}, {x: sW*0.88, y: sH*0.85}];
 
-let camera = null;
-let faceMesh = null;
-let running = false;
-let prevSmoothed = null;
-let dpr = window.devicePixelRatio || 1;
+  // Camera & FaceMesh setup
+  let camera = null;
+  let faceMesh = null;
+  let running = false;
+  let prevSmoothed = null;
+  let dpr = window.devicePixelRatio || 1;
 
-// utility: distance
-function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
-
-// convert normalized landmarks to px coords for current canvas
-function toPixels(landmarks){
-  const W = CANV.width / dpr;
-  const H = CANV.height / dpr;
-  return landmarks.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z||0) * W}));
-}
-
-// EMA smoothing
-function smooth(prev, curr, alpha=0.7){
-  if (!prev || prev.length !== curr.length) return curr.map(p=>({x:p.x,y:p.y,z:p.z||0}));
-  const out = [];
-  for (let i=0;i<curr.length;i++){
-    out.push({
-      x: prev[i].x*alpha + curr[i].x*(1-alpha),
-      y: prev[i].y*alpha + curr[i].y*(1-alpha),
-      z: (prev[i].z||0)*alpha + (curr[i].z||0)*(1-alpha)
-    });
+  function resizeCanvasToVideo(){
+    const vw = video.videoWidth || video.clientWidth || 640;
+    const vh = video.videoHeight || video.clientHeight || 480;
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(vw * dpr);
+    canvas.height = Math.round(vh * dpr);
+    canvas.style.width = `${vw}px`;
+    canvas.style.height = `${vh}px`;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
   }
-  return out;
-}
 
-function resizeCanvasToVideo(){
-  const vw = VIDEO.videoWidth || VIDEO.clientWidth || 640;
-  const vh = VIDEO.videoHeight || VIDEO.clientHeight || 480;
-  dpr = window.devicePixelRatio || 1;
-  CANV.width = Math.round(vw * dpr);
-  CANV.height = Math.round(vh * dpr);
-  CANV.style.width = `${vw}px`;
-  CANV.style.height = `${vh}px`;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-}
+  // Simple EMA smoothing
+  function smooth(prev, curr, alpha=0.7){
+    if (!prev || prev.length !== curr.length) return curr.map(p=>({x:p.x,y:p.y,z:p.z||0}));
+    const out = [];
+    for (let i=0;i<curr.length;i++){
+      out.push({
+        x: prev[i].x*alpha + curr[i].x*(1-alpha),
+        y: prev[i].y*alpha + curr[i].y*(1-alpha),
+        z: (prev[i].z||0)*alpha + (curr[i].z||0)*(1-alpha)
+      });
+    }
+    return out;
+  }
 
-// draw minimalist mesh: wireframe + few key points (not too many)
-function drawFaceMesh(pts){
-  ctx.save();
-  ctx.lineWidth = 0.7;
-  ctx.strokeStyle = 'rgba(108, 242, 209, 0.95)'; // cyan
-  ctx.shadowColor = 'rgba(108, 242, 209, 0.06)';
-  ctx.shadowBlur = 8;
+  // Convert normalized to px
+  function toPixels(landmarks){
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
+    return landmarks.map(p => ({ x: p.x * W, y: p.y * H, z: (p.z||0) * W }));
+  }
 
-  // if drawing utilities available, try drawConnectors to get full tessellation
-  if (typeof drawConnectors !== 'undefined' && typeof FACEMESH_TESSELATION !== 'undefined') {
-    try {
-      // drawConnectors can accept normalized landmarks when used with drawing_utils via MediaPipe examples,
-      // but here we already have pixel coords; fallback to drawing a simplified wire manually:
-      // We'll draw a few connector sets: (jawline, left eye outline, right eye outline, lips)
-      // jaw 0..16
-      ctx.beginPath();
-      for (let i=0;i<=16;i++){ const p=pts[i]; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
-      ctx.stroke();
+  // Compute affine matrix that maps src triangle to dst triangle.
+  // Returns [a, b, c, d, e, f] for ctx.setTransform(a,b,c,d,e,f)
+  // Such that for a point (u,v) in source, the transformed position is (x,y) in destination.
+  function computeAffineFromTri(srcTri, dstTri) {
+    // Solve linear system for affine transform:
+    // [ u v 1 0 0 0 ] [a]   [x]
+    // [ 0 0 0 u v 1 ] [b] = [y]
+    // for 3 vertices => 6x6 system
+    const A = [];
+    const B = [];
+    for (let i=0;i<3;i++){
+      const su = srcTri[i].x, sv = srcTri[i].y;
+      const dx = dstTri[i].x, dy = dstTri[i].y;
+      A.push([su, sv, 1, 0, 0, 0]);
+      A.push([0, 0, 0, su, sv, 1]);
+      B.push(dx);
+      B.push(dy);
+    }
+    // solve A * T = B
+    // use Gaussian elimination for 6x6 small system
+    // convert to augmented matrix
+    const M = A.map((row,i)=> row.concat(B[i]));
+    // gaussian elimination
+    const n = 6;
+    for (let i=0;i<n;i++){
+      // pivot
+      let maxRow = i;
+      for (let r=i+1;r<n;r++) if (Math.abs(M[r][i]) > Math.abs(M[maxRow][i])) maxRow = r;
+      if (Math.abs(M[maxRow][i]) < 1e-8) continue;
+      const tmp = M[i]; M[i] = M[maxRow]; M[maxRow] = tmp;
+      // normalize row
+      const piv = M[i][i];
+      for (let c=i;c<=n;c++) M[i][c] /= piv;
+      // eliminate
+      for (let r=0;r<n;r++){
+        if (r===i) continue;
+        const fac = M[r][i];
+        if (Math.abs(fac) < 1e-12) continue;
+        for (let c=i;c<=n;c++) M[r][c] -= fac * M[i][c];
+      }
+    }
+    const T = [];
+    for (let i=0;i<n;i++) T.push(M[i][n]);
+    // T = [a, b, e, c, d, f] actually order we solved: first x eq then y eq => [a,b,1x,c,d,1y]? verify mapping:
+    // We created rows [su sv 1 0 0 0] -> a,b,e and [0 0 0 su sv 1] -> c,d,f. So T = [a,b,e,c,d,f]
+    return [T[0], T[1], T[2], T[3], T[4], T[5]];
+  }
 
-      // left eye 33..133 (approx) draw a ring via known indices for left eye
-      const leftEyeIdx = [33,7,163,144,145,153,154,155,133];
-      ctx.beginPath();
-      leftEyeIdx.forEach((id,i)=>{ const p=pts[id]; if(!p) return; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-      ctx.closePath();
-      ctx.stroke();
-
-      const rightEyeIdx = [263,249,390,373,374,380,381,382,362];
-      ctx.beginPath();
-      rightEyeIdx.forEach((id,i)=>{ const p=pts[id]; if(!p) return; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-      ctx.closePath();
-      ctx.stroke();
-
-      // mouth outer 61..291.. etc - draw outer lip
-      const mouthIdx = [61,146,91,181,84,17,314,405,321,375,291,308,324,318,402,317,14,87,178];
-      ctx.beginPath();
-      mouthIdx.forEach((id,i)=>{ const p=pts[id]; if(!p) return; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-      ctx.closePath();
-      ctx.stroke();
-
-    } catch(e){ /* ignore and fallback to simple */ }
-  } else {
-    // fallback simple: jaw only
+  // Draw a source image triangle mapped to destination triangle using ctx transform + clipping
+  function drawImageTri(img, srcTri, dstTri) {
+    // compute affine matrix mapping src->dst
+    const M = computeAffineFromTri(srcTri, dstTri); // [a,b,e,c,d,f]
+    ctx.save();
+    // clip to destination triangle
     ctx.beginPath();
-    for (let i=0;i<=16;i++){ const p=pts[i]; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
+    ctx.moveTo(dstTri[0].x, dstTri[0].y);
+    ctx.lineTo(dstTri[1].x, dstTri[1].y);
+    ctx.lineTo(dstTri[2].x, dstTri[2].y);
+    ctx.closePath();
+    ctx.clip();
+
+    // set transform so that when we draw the full image, the src triangle maps to dst triangle.
+    // But computeAffine expects source coordinates relative to image, so we must set transform accordingly.
+    // The canvas transform maps new coordinates (x',y') = M * (u,v,1). So we want to draw the image in its own coordinate space with that transform.
+    ctx.setTransform(M[0], M[3], M[1], M[4], M[2], M[5]); // careful with ordering: setTransform(a, c, b, d, e, f)?? canvas uses (a, b, c, d, e, f) mapping x' = a*x + c*y + e; y' = b*x + d*y + f.
+    // Our compute returned [a,b,e,c,d,f] where x' = a*u + b*v + e and y' = c*u + d*v + f. So map to canvas setTransform(a, c, b, d, e, f).
+    // So pass (a, c, b, d, e, f)
+    // But above we passed (M[0], M[3], M[1], M[4], M[2], M[5]) which is (a,c,b,d,e,f).
+    // draw the entire image in its coord space
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+    // restore clip automatically by restore
+  }
+
+  // draw mask split into two triangles mapping srcA->dstA and srcB->dstB
+  function drawMaskOnFace(maskImg, dstPoints, options={scale:1.0, offsetX:0, offsetY:0}) {
+    // dstPoints expected: { leftCheek: {x,y}, rightCheek, noseTip, chin }
+    // We'll define mask destination triangles in pixel space based on these anchors.
+    // Define center top point slightly above nose (interpolate nose & eyes)
+    const L = dstPoints.leftCheek, R = dstPoints.rightCheek, N = dstPoints.noseTip, C = dstPoints.chin;
+    if (!L || !R || !N || !C) return;
+
+    // center between cheeks
+    const cx = (L.x + R.x) / 2;
+    const cy = (L.y + R.y) / 2;
+
+    // compute face width and height
+    const faceW = Math.hypot(R.x - L.x, R.y - L.y);
+    const faceH = Math.hypot(C.x - N.x, C.y - N.y);
+
+    // compute a top anchor above nose tip for mask top
+    const topX = N.x;
+    const topY = N.y - faceH * 0.36; // mask extends above nose a bit
+
+    // Destination triangles: left and right
+    // left tri: [left cheek top area, top, left chin area]
+    // right tri: [right cheek top area, top, right chin area]
+    const leftTop = { x: lerp(L.x, cx, 0.25) + options.offsetX*faceW, y: lerp(L.y, topY, 0.25) + options.offsetY*faceH };
+    const rightTop = { x: lerp(R.x, cx, 0.25) + options.offsetX*faceW, y: lerp(R.y, topY, 0.25) + options.offsetY*faceH };
+    // bottom left and right near chin
+    const leftBottom = { x: lerp(L.x, C.x, 0.45) + options.offsetX*faceW, y: lerp(L.y, C.y, 0.45) + options.offsetY*faceH };
+    const rightBottom = { x: lerp(R.x, C.x, 0.45) + options.offsetX*faceW, y: lerp(R.y, C.y, 0.45) + options.offsetY*faceH };
+
+    // compute mask size scaling factor
+    const scale = options.scale || 1.0;
+    // For more control we will compute dst triangles as:
+    const dstA = [ leftTop, {x: topX + options.offsetX*faceW, y: topY + options.offsetY*faceH}, leftBottom ];
+    const dstB = [ rightTop, {x: topX + options.offsetX*faceW, y: topY + options.offsetY*faceH}, rightBottom ];
+
+    // optionally apply rotation to better align: we already used interpolation that aligns with cheek line
+    // Now draw image mapped: we need to map source triangles srcA and srcB to dstA/dstB
+    drawImageTri(maskImg, srcA, dstA);
+    drawImageTri(maskImg, srcB, dstB);
+  }
+
+  // lerp convenience
+  function lerp(a,b,t){ return a + (b-a)*t; }
+
+  // Init FaceMesh
+  async function initFaceMesh() {
+    faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      selfieMode: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    faceMesh.onResults(onResults);
+  }
+
+  // render loop callback
+  function onResults(results){
+    // ensure canvas size
+    resizeCanvasToVideo();
+    ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
+
+    if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+      centerMsg.textContent = 'Esperando rostro...';
+      return;
+    }
+    centerMsg.textContent = 'Rostro detectado — aplicando mascarilla';
+
+    // convert normalized to pixel coords
+    const pixels = toPixels(results.multiFaceLandmarks[0]);
+    // smoothing
+    const smoothPts = smooth(prevSmoothed, pixels, 0.75);
+    prevSmoothed = smoothPts;
+
+    // light wire overlay for recognition feeling
+    drawWireMinimal(smoothPts);
+
+    // prepare dst anchors
+    const dst = {
+      leftCheek: smoothPts[IDX.leftCheek],
+      rightCheek: smoothPts[IDX.rightCheek],
+      noseTip: smoothPts[IDX.noseTip],
+      chin: smoothPts[IDX.chin]
+    };
+
+    // options from UI
+    const options = {
+      scale: parseFloat(maskScaleEl.value || 1.0),
+      offsetX: parseFloat(maskXEl.value || 0),
+      offsetY: parseFloat(maskYEl.value || 0)
+    };
+
+    // draw the mask using triangular warping
+    // save global alpha & composite to better integrate
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    drawMaskOnFace(maskImg, dst, options);
+    // subtle shadow under mask to integrate
+    if (dst.noseTip && dst.chin) {
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#000';
+      const cx = (dst.leftCheek.x + dst.rightCheek.x)/2;
+      const cy = dst.noseTip.y + (dst.chin.y - dst.noseTip.y) * 0.45;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.hypot(dst.rightCheek.x-dst.leftCheek.x, dst.rightCheek.y-dst.leftCheek.y)*0.46, (dst.chin.y-dst.noseTip.y)*0.18, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // draw a minimal wire (jawline + nose + mouth) to keep recognition look
+  function drawWireMinimal(pts){
+    ctx.save();
+    ctx.lineWidth = 0.9;
+    ctx.strokeStyle = 'rgba(110,240,217,0.95)';
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = 'rgba(110,240,217,0.12)';
+
+    // jaw 0..16
+    ctx.beginPath();
+    for (let i=0;i<=16;i++){ const p = pts[i]; if(!p) continue; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
     ctx.stroke();
-  }
 
-  // key small neon dots on select points
-  ctx.fillStyle = 'rgba(255,90,180,0.95)'; // pinkish
-  const keys = [1, 33, 263, 61, 291, 13, 14, 152];
-  for (const id of keys){
-    const p = pts[id];
-    if (!p) continue;
+    // nose bridge 1..4
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2);
-    ctx.fill();
+    for (let i=1;i<=4;i++){ const p=pts[i]; if(!p) continue; if(i===1) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
+    ctx.stroke();
+
+    // mouth outer simplified
+    const mouthIdx = [61,146,91,181,84,17,314,405,321,375,291];
+    ctx.beginPath();
+    for (let i=0;i<mouthIdx.length;i++){ const p=pts[mouthIdx[i]]; if(!p) continue; if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }
+    ctx.closePath();
+    ctx.stroke();
+
+    // small key dots
+    ctx.fillStyle = 'rgba(255,90,180,0.95)';
+    const keys = [1, 33, 263, 61, 291, 152];
+    for (const k of keys){
+      const p = pts[k]; if(!p) continue;
+      ctx.beginPath(); ctx.arc(p.x,p.y,2.4,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
   }
 
-  ctx.restore();
-}
-
-// compute emotion heuristics & return result { label, scoreObj }
-function evaluateEmotion(pts){
-  // landmarks used (MediaPipe indices):
-  // eyes: 33 (left outer), 263 (right outer)
-  // mouth corners: 61 (left), 291 (right)
-  // upper lip: 13, lower lip: 14 (approx)
-  // brows inner approximations: 105 (left inner brow), 334 (right inner brow) [If missing, fallback]
-  const leftEye = pts[33], rightEye = pts[263];
-  const leftMouth = pts[61], rightMouth = pts[291];
-  const upperLip = pts[13], lowerLip = pts[14];
-  const browL = pts[105] || pts[65];
-  const browR = pts[334] || pts[295];
-
-  if (!leftEye || !rightEye || !leftMouth || !rightMouth) return { label:'Neutral', reason:'Pocos landmarks', scores:{} };
-
-  const eyeDist = dist(leftEye, rightEye) || 1.0; // scale basis
-
-  const mouthWidth = dist(leftMouth, rightMouth);
-  const mouthOpen = (upperLip && lowerLip) ? dist(upperLip, lowerLip) : 0;
-
-  // smile factor: mouthWidth normalized by eye distance
-  const smileFactor = mouthWidth / eyeDist;
-
-  // openness factor normalized
-  const openFactor = mouthOpen / eyeDist;
-
-  // brow metric: average eyebrow y relative to eye y (if available)
-  let browMetric = 0;
-  if (browL && browR && leftEye && rightEye){
-    const eyeY = (leftEye.y + rightEye.y) / 2;
-    const browY = (browL.y + browR.y) / 2;
-    // negative when brows lower (browY closer to eyeY), positive when raised
-    browMetric = (eyeY - browY) / eyeDist; // positive -> brow above eyes; negative -> brow lower (frown)
-  }
-
-  // thresholds from UI
-  const smileThresh = parseFloat(smileThreshEl.value);
-  const openThresh = parseFloat(openThreshEl.value);
-  const browThresh = parseFloat(browThreshEl.value);
-
-  // simple logic:
-  // if smileFactor > smileThresh and openFactor < some high (not yawning) => happy
-  // if browMetric < browThresh (meaning brows lower / negative beyond threshold) and smileFactor small => angry
-  // else neutral
-
-  const isSmiling = (smileFactor > smileThresh) && (openFactor < (openThresh * 2.2)); // avoid wide-open mouth false positives
-  const isAngry = (browMetric < -Math.abs(browThresh)) && (smileFactor < smileThresh * 0.95);
-
-  let label = 'Neutral';
-  if (isSmiling) label = 'Feliz';
-  else if (isAngry) label = 'Molesto';
-
-  return {
-    label,
-    scores: { smileFactor, openFactor, browMetric, thresholds:{smileThresh, openThresh, browThresh} }
-  };
-}
-
-// render big central HUD
-function showBigResult(label){
-  if (label === 'Feliz'){
-    bigIcon.className = 'big-status';
-    bigIcon.innerHTML = '😊';
-    bigText.textContent = 'FELIZ';
-  } else if (label === 'Molesto'){
-    bigIcon.className = 'big-status angry';
-    bigIcon.innerHTML = '😠';
-    bigText.textContent = 'MOLESTO';
-  } else {
-    bigIcon.className = 'big-status';
-    bigIcon.innerHTML = '—';
-    bigText.textContent = 'Neutral';
-  }
-}
-
-// main results callback for MediaPipe
-async function onResults(results){
-  if (!results || !results.multiFaceLandmarks || !results.multiFaceLandmarks.length){
-    // clear and show waiting
-    ctx.clearRect(0,0,CANV.width/dpr,CANV.height/dpr);
-    footerState.textContent = 'Esperando rostro';
-    showBigResult('Neutral');
-    return;
-  }
-
-  resizeCanvasToVideo();
-
-  // normalized landmarks -> pixel coords
-  const pixels = toPixels(results.multiFaceLandmarks[0]);
-  const sm = smooth(prevSmoothed, pixels, 0.75);
-  prevSmoothed = sm;
-
-  // draw mesh (minimal)
-  drawFaceMesh(sm);
-
-  // evaluate emotion
-  const out = evaluateEmotion(sm);
-  footerState.textContent = out.label;
-  showBigResult(out.label);
-
-  // optionally show small debug numbers (remove for clean)
-  // ctx.save(); ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='11px Inter'; ctx.fillText(`smile:${out.scores.smileFactor.toFixed(2)} open:${out.scores.openFactor.toFixed(2)} brow:${out.scores.browMetric.toFixed(3)}`, 12, 22); ctx.restore();
-}
-
-// init FaceMesh
-async function initFaceMesh(){
-  faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-  faceMesh.setOptions({
-    maxNumFaces: 1,
-    refineLandmarks: true,
-    selfieMode: true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+  // Start camera
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    centerMsg.textContent = 'Solicitando cámara, acepta el permiso...';
+    try {
+      if (!faceMesh) await initFaceMesh();
+      camera = new Camera(video, {
+        onFrame: async () => { await faceMesh.send({image: video}); },
+        width: 960,
+        height: 720,
+        facingMode: 'user'
+      });
+      await camera.start();
+      running = true;
+      stopBtn.disabled = false;
+      centerMsg.textContent = 'Cámara activa — esperando rostro...';
+      video.addEventListener('loadedmetadata', () => resizeCanvasToVideo(), { once:true });
+    } catch (err) {
+      console.error('camera start error', err);
+      centerMsg.textContent = 'Error cámara: ' + (err?.message || err);
+      startBtn.disabled = false;
+    }
   });
-  faceMesh.onResults(onResults);
-}
 
-// Start camera
-async function startCamera(){
-  startBtn.disabled = true;
-  footerState.textContent = 'Solicitando cámara...';
-  try {
-    if (!faceMesh) await initFaceMesh();
-
-    const cam = new Camera(VIDEO, {
-      onFrame: async () => { await faceMesh.send({ image: VIDEO }); },
-      width: 720,
-      height: 560,
-      facingMode: 'user'
-    });
-    camera = cam;
-    await camera.start();
-    running = true;
-    stopBtn.disabled = false;
-    footerState.textContent = 'Cámara activa';
-    showBigResult('Neutral');
-    VIDEO.addEventListener('loadedmetadata', ()=> resizeCanvasToVideo(), { once:true });
-  } catch (err) {
-    console.error('Error al iniciar cámara', err);
-    footerState.textContent = 'Error cámara: ' + (err?.message || err);
+  stopBtn.addEventListener('click', () => {
+    if (camera) { camera.stop(); camera = null; }
+    running = false;
     startBtn.disabled = false;
-  }
-}
+    stopBtn.disabled = true;
+    centerMsg.textContent = 'Detenido';
+    ctx.clearRect(0,0,canvas.width/dpr, canvas.height/dpr);
+  });
 
-// Stop camera
-function stopCamera(){
-  if (camera) { try{ camera.stop(); } catch(e){} camera = null; }
-  running = false;
-  prevSmoothed = null;
-  ctx.clearRect(0,0,CANV.width/dpr,CANV.height/dpr);
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  footerState.textContent = 'Detenido';
-  showBigResult('Neutral');
-}
+  // helpers: lerp
+  function lerp(a,b,t){ return a + (b-a)*t; }
 
-// events
-startBtn.addEventListener('click', startCamera);
-stopBtn.addEventListener('click', stopCamera);
+  // expose for debugging
+  window.__maskWarp = { drawMaskOnFace, computeAffineFromTri, srcA, srcB };
 
-// resize on orientation change
-window.addEventListener('resize', () => { if (VIDEO && VIDEO.videoWidth) resizeCanvasToVideo(); });
-
-// initial UI state
-footerState.textContent = 'detenido';
-showBigResult('Neutral');
-
+})(); // IIFE end
 </script>
 </body>
 </html>
