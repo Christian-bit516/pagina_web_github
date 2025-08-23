@@ -4,316 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Reconocimiento Facial - Registro de Horas</title>
+    <link rel="stylesheet" href="css/style.css">
     <!-- TensorFlow.js y Teachable Machine -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .main-container {
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            align-items: center;
-        }
-
-        .camera-box {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-
-        .camera-header {
-            margin-bottom: 25px;
-        }
-
-        .camera-header h2 {
-            color: #fff;
-            font-size: 2em;
-            margin-bottom: 10px;
-            font-weight: 700;
-        }
-
-        .camera-header p {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 1.1em;
-        }
-
-        #webcam-container {
-            position: relative;
-            display: inline-block;
-            border-radius: 10px;
-            overflow: hidden;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-        }
-
-        #webcam-container::before,
-        #webcam-container::after {
-            content: '';
-            position: absolute;
-            width: 40px;
-            height: 40px;
-            border-style: solid;
-            border-color: #667eea;
-            transition: all 0.3s ease;
-        }
-
-        #webcam-container::before {
-            top: 10px;
-            left: 10px;
-            border-width: 4px 0 0 4px;
-        }
-
-        #webcam-container::after {
-            bottom: 10px;
-            right: 10px;
-            border-width: 0 4px 4px 0;
-        }
-
-        .scanner-line {
-            position: absolute;
-            left: 0;
-            width: 100%;
-            height: 2px;
-            background: #667eea;
-            box-shadow: 0 0 10px #667eea;
-            animation: scan 4s infinite linear;
-        }
-
-        @keyframes scan {
-            0% { top: 0%; }
-            50% { top: calc(100% - 2px); }
-            100% { top: 0%; }
-        }
-
-        .info-panel {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-
-        .user-info-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            text-align: center;
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
-        }
-
-        .welcome-title {
-            font-size: 1.3em;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .user-name {
-            font-size: 1.8em;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-
-        .time-info {
-            font-size: 0.9em;
-            opacity: 0.9;
-            background: rgba(255, 255, 255, 0.2);
-            padding: 8px 15px;
-            border-radius: 20px;
-            display: inline-block;
-            margin: 5px 0;
-        }
-
-        .records-section {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-
-        .records-header {
-            text-align: center;
-            margin-bottom: 15px;
-            color: #2c3e50;
-            font-weight: 600;
-            font-size: 1.2em;
-        }
-
-        .records-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        .records-table th,
-        .records-table td {
-            padding: 12px;
-            text-align: center;
-            border-bottom: 1px solid #e9ecef;
-        }
-
-        .records-table th {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            font-weight: 600;
-        }
-
-        .records-table tr:hover {
-            background-color: #f8f9fa;
-        }
-
-        .pending {
-            color: #ff6b6b;
-            font-weight: bold;
-        }
-
-        .countdown-section {
-            background: #2c3e50;
-            color: white;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-            margin-top: 20px;
-            display: none;
-        }
-
-        .countdown-text {
-            font-size: 16px;
-            margin-bottom: 10px;
-        }
-
-        .countdown-number {
-            font-size: 3em;
-            font-weight: bold;
-            color: #fff;
-            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
-        }
-
-        .dashboard-button, .logout-button, .login-button {
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
-            font-size: 14px;
-            display: none;
-            margin-top: 10px;
-            width: 100%;
-            text-transform: uppercase;
-        }
-
-        .dashboard-button { background: linear-gradient(135deg, #667eea, #764ba2); }
-        .logout-button { background: linear-gradient(135deg, #ff6b6b, #ee5a52); }
-        .login-button { background: linear-gradient(135deg, #4CAF50, #45a049); }
-
-        .dashboard-button:hover, .logout-button:hover, .login-button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        .status-section {
-            background: rgba(255, 255, 255, 0.8);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            text-align: center;
-            border-left: 4px solid #667eea;
-        }
-
-        .status-text {
-            font-size: 16px;
-            color: #2c3e50;
-            font-weight: 500;
-        }
-
-        .security-badge {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 15px 25px;
-            border-radius: 25px;
-            font-size: 14px;
-            font-weight: 600;
-            text-align: center;
-            margin-top: 30px;
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
-            grid-column: 1 / -1;
-        }
-
-        .button-group {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        @media (max-width: 900px) {
-            .main-container {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-
-            .camera-box {
-                padding: 20px;
-            }
-
-            #webcam {
-                height: 300px;
-            }
-        }
-
-        @media (max-width: 600px) {
-            body {
-                padding: 15px;
-            }
-
-            .camera-header h2 {
-                font-size: 1.7em;
-            }
-
-            #webcam {
-                height: 250px;
-            }
-
-            .info-panel {
-                padding: 20px;
-            }
-
-            .user-name {
-                font-size: 1.5em;
-            }
-        }
-    </style>
 </head>
 <body>
     <div class="main-container">
         <!-- Cuadro de la cámara a la izquierda -->
-        <div class="camera-box">
+        <div class="camera-box glass-effect">
             <div class="camera-header">
                 <h2>Cámara de Reconocimiento</h2>
                 <p>Mire directamente a la cámara para registrar su ingreso</p>
@@ -326,7 +25,7 @@
         </div>
 
         <!-- Panel de información a la derecha -->
-        <div class="info-panel">
+        <div class="info-panel glass-effect">
             <!-- Sección de información del usuario -->
             <div class="user-info-section">
                 <div class="welcome-title">Bienvenido/a</div>
@@ -339,7 +38,7 @@
             </div>
 
             <!-- Sección de registros de horas -->
-            <div class="records-section" id="records-section">
+            <div class="records-section">
                 <div class="records-header">Registro de Horarios</div>
                 <table class="records-table">
                     <thead>
@@ -356,7 +55,7 @@
                 </table>
             </div>
 
-            <div class="countdown-section" id="countdown-section">
+            <div class="countdown-section">
                 <div class="countdown-text">¡Usuario reconocido! Registrando ingreso...</div>
                 <div class="countdown-number" id="countdown-number">3</div>
             </div>
