@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - Estadísticas del Sistema</title>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    :root{
+      --bg-grad-start:#0d1b2a;
+      --bg-grad-end:#1b263b;
+      --card:#f8f9fa;
+      --text:#1b263b;
+      --muted:#6c757d;
+      --accent1:#00bfff;
+      --accent2:#000000;
+      --grid-gap:20px;
+    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+      background:linear-gradient(135deg,var(--bg-grad-start) 0%,var(--bg-grad-end) 100%);
+      min-height:100vh; padding:20px;
+    }
+    .dashboard-container{max-width:1200px;margin:0 auto}
+    .dashboard-header{
+      display:flex;justify-content:space-between;align-items:center;gap:16px;
+      margin-bottom:30px;background:var(--card);padding:20px;border-radius:15px;
+      box-shadow:0 15px 35px rgba(0,0,0,.2);flex-wrap:wrap
+    }
+    .header-title{
+      color:var(--text);font-size:2.2em;font-weight:800;letter-spacing:.3px;
+      background:linear-gradient(135deg,var(--accent1) 0%,var(--accent2) 100%);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text
+    }
+    .header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .back-button,.ghost-button{
+      background:linear-gradient(135deg,var(--accent1),var(--accent2));
+      color:#fff;border:none;padding:10px 16px;border-radius:10px;cursor:pointer;
+      font-weight:600;font-size:14px;text-decoration:none;display:inline-flex;align-items:center;gap:8px;
+      transition:all .25s ease; box-shadow:0 5px 14px rgba(0,0,0,.35)
+    }
+    .back-button:hover{transform:translateY(-2px)}
+    .ghost-button{
+      background:transparent; color:var(--text); border:2px solid #e6e9ef; box-shadow:none
+    }
+    .ghost-button:hover{background:#f3f5fa}
+    .filters{
+      display:flex;gap:10px;align-items:center;flex-wrap:wrap
+    }
+    .filters input[type="date"]{
+      border:1px solid #e3e7ee;border-radius:10px;padding:8px 10px;outline:none
+    }
+    .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--grid-gap);margin-bottom:30px}
+    .chart-container{background:var(--card);padding:22px;border-radius:15px;box-shadow:0 8px 25px rgba(0,0,0,.1)}
+    .chart-title{text-align:center;color:var(--text);font-size:1.2em;font-weight:700;margin-bottom:12px}
+    .chart-wrap{position:relative;height:340px}
+    canvas{display:block;width:100% !important;height:100% !important}
+    .recent-activity{background:var(--card);padding:22px;border-radius:15px;box-shadow:0 8px 25px rgba(0,0,0,.1)}
+    .activity-title{text-align:center;color:var(--text);font-size:1.3em;font-weight:700;margin-bottom:12px}
+    .activity-table{width:100%;border-collapse:collapse;margin-top:8px}
+    .activity-table th,.activity-table td{padding:12px;text-align:center;border-bottom:1px solid #e9ecef}
+    .activity-table th{background:linear-gradient(135deg,var(--accent1),var(--accent2));color:#fff;font-weight:700}
+    .activity-table tr:hover{background:#f8f9fa}
+    .status-active{color:#00bfff;font-weight:700} /* En Progreso celeste */
+    .status-inactive{color:#1b263b;font-weight:700} /* Completadas negro */
+    .empty-state{text-align:center;padding:32px;color:var(--muted)}
+    .empty-state i{font-size:3.6em;margin-bottom:10px;color:#dfe4ea}
+    @media (max-width:900px){.charts-grid{grid-template-columns:1fr}}
+    @media (max-width:600px){.chart-wrap{height:300px}}
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    <div class="dashboard-header">
+      <h1 class="header-title"><i class="fas fa-chart-line"></i> Dashboard</h1>
+      <div class="header-actions">
+        <div class="filters">
+          <input type="date" id="desde" aria-label="Desde" />
+          <input type="date" id="hasta" aria-label="Hasta" />
+          <button class="ghost-button" id="btnFiltrar"><i class="fa fa-filter"></i> Filtrar</button>
+          <button class="ghost-button" id="btnLimpiar"><i class="fa fa-eraser"></i> Limpiar</button>
+          <button class="ghost-button" id="btnExport"><i class="fa fa-file-export"></i> Exportar CSV</button>
+        </div>
+        <a href="index.html" class="back-button"><i class="fas fa-arrow-left"></i> Volver</a>
+      </div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="charts-grid">
+      <div class="chart-container">
+        <h3 class="chart-title">Comparación Duración Registros</h3>
+        <div class="chart-wrap"><canvas id="statusChart"></canvas></div>
+      </div>
+      <div class="chart-container">
+        <h3 class="chart-title">Registros por Día</h3>
+        <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Actividad reciente -->
+    <div class="recent-activity">
+      <h3 class="activity-title">Actividad Reciente</h3>
+      <div id="activity-content"></div>
+    </div>
+  </div>
+
+  <script>
+    const toISODate = (d) => {
+      const pad = (n) => String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    };
+
+    const parseFechaFlexible = (str) => {
+      if (!str) return null;
+      const iso = /^\d{4}-\d{2}-\d{2}$/;
+      if (iso.test(str)) return new Date(str + 'T00:00:00');
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
+      const m = str.match(dmy);
+      if(m){
+        let [y,mo,d]=[parseInt(m[3]),parseInt(m[2])-1,parseInt(m[1])];
+        if(y<100)y+=2000;
+        return new Date(y,mo,d);
+      }
+      const asDate=new Date(str);
+      return isNaN(asDate.getTime())?null:asDate;
+    };
+
+    const normalizeEstado = (e)=>{
+      if(!e) return 'en progreso';
+      const t=String(e).trim().toLowerCase();
+      if(['activo','activa','en curso','en progreso','running'].includes(t)) return 'en progreso';
+      if(['finalizado','finalizada','cerrado','completado','completada','done'].includes(t)) return 'finalizado';
+      return t;
+    };
+
+    const getRegistros=()=>{
+      const raw=localStorage.getItem('registrosHorarios');
+      let data=[];
+      try{data=JSON.parse(raw||'[]')}catch{data=[];}
+      if(!Array.isArray(data)||data.length===0){
+        const hoy=new Date();
+        const dias=[...Array(7)].map((_,i)=>{ const d=new Date(); d.setDate(hoy.getDate()-(6-i)); return d; });
+        data=[
+          {fecha:toISODate(dias[6]),entrada:'08:00',salida:'12:30',estado:'finalizado'},
+          {fecha:toISODate(dias[6]),entrada:'13:00',salida:'15:00',estado:'finalizado'},
+          {fecha:toISODate(dias[6]),entrada:'16:00',salida:'',estado:'activo'},
+          {fecha:toISODate(dias[5]),entrada:'09:00',salida:'11:00',estado:'finalizado'},
+          {fecha:toISODate(dias[4]),entrada:'10:00',salida:'13:30',estado:'finalizado'},
+          {fecha:toISODate(dias[3]),entrada:'07:30',salida:'10:00',estado:'finalizado'},
+          {fecha:toISODate(dias[2]),entrada:'08:15',salida:'',estado:'activa'},
+          {fecha:toISODate(dias[1]),entrada:'08:00',salida:'12:00',estado:'Finalizado'},
+          {fecha:toISODate(dias[0]),entrada:'',salida:'',estado:'en curso'}
+        ];
+      }
+      return data.map(r=>({
+        fecha:r.fecha,
+        entrada:r.entrada||'',
+        salida:r.salida||'',
+        estado:normalizeEstado(r.estado)
+      }));
+    };
+
+    const convertirHoraAMinutos = (hhmm) => {
+      if (!hhmm) return null;
+      const match = hhmm.match(/(\d+):(\d+)(?::\d+)?\s*([ap]\.?m\.?)/i);
+      if(match){
+        let h = parseInt(match[1],10);
+        const m = parseInt(match[2],10);
+        const ampm = match[3].toLowerCase();
+        if(ampm.includes('p') && h < 12) h += 12;
+        if(ampm.includes('a') && h === 12) h = 0;
+        return h*60 + m;
+      }
+      const parts = hhmm.split(':').map(Number);
+      if(parts.length < 2) return null;
+      return parts[0]*60 + parts[1];
+    };
+
+    const calcularDuracion=(entrada,salida)=>{
+      const e=convertirHoraAMinutos(entrada);
+      const s=convertirHoraAMinutos(salida);
+      if(e==null||s==null||s<e) return '--';
+      const dif=s-e;
+      const h=Math.floor(dif/60);
+      const m=dif%60;
+      return `${h}h ${m}m`;
+    };
+
+    let chartStatus=null; 
+    let chartDaily=null;
+
+    const destroyCharts=()=>{
+      if(chartStatus){chartStatus.destroy();chartStatus=null;}
+      if(chartDaily){chartDaily.destroy();chartDaily=null;}
+    };
+
+    const createCharts=(registros)=>{
+      destroyCharts();
+
+      // Gráfico de comparación duración corta vs larga
+      const statusCtx=document.getElementById('statusChart').getContext('2d');
+      let corta=0, larga=0;
+      registros.forEach(r=>{
+        const dur = calcularDuracion(r.entrada,r.salida);
+        if(dur==='--') return;
+        const [h,m] = dur.split('h').map((v,i)=>i===0?parseInt(v):parseInt(v.replace('m','')));
+        const mins = h*60+m;
+        if(mins<60) corta++;
+        else larga++;
+      });
+
+      chartStatus=new Chart(statusCtx,{
+        type:'doughnut',
+        data:{
+          labels:['Duración < 1h','Duración ≥ 1h'],
+          datasets:[{
+            data:[corta,larga],
+            backgroundColor:['#00bfff','#1b263b'],
+            borderColor:'#fff',
+            borderWidth:2
+          }]
+        },
+        options:{
+          responsive:true,
+          maintainAspectRatio:false,
+          plugins:{
+            legend:{position:'bottom'},
+            tooltip:{callbacks:{label:(ctx)=>`${ctx.label}: ${ctx.raw||0} registros`}}
+          }
+        }
+      });
+
+      // Por día
+      const ultimos7=[...Array(7)].map((_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d; });
+      const diasISO=ultimos7.map(d=>toISODate(d));
+      const labels=ultimos7.map(d=>d.toLocaleDateString(undefined,{month:'2-digit',day:'2-digit'}));
+      const contadores=diasISO.map(iso=>registros.filter(r=>toISODate(parseFechaFlexible(r.fecha)||new Date())===iso).length);
+
+      const dailyCtx=document.getElementById('dailyChart').getContext('2d');
+      chartDaily=new Chart(dailyCtx,{
+        type:'bar',
+        data:{labels:labels,datasets:[{label:'Registros por Día',data:contadores,backgroundColor:'rgba(0,191,255,0.85)',borderColor:'rgba(0,0,0,1)',borderWidth:2}]},
+        options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,ticks:{stepSize:1}}},plugins:{legend:{position:'top'}}}
+      });
+    };
+
+    const showRecentActivity=(registros)=>{
+      const ultimos=registros.slice(-10).reverse();
+      if(!ultimos.length){
+        document.getElementById('activity-content').innerHTML=`<div class="empty-state"><i class="fas fa-clock"></i><h3>No hay actividad reciente</h3></div>`;
+        return;
+      }
+      const rows=ultimos.map(r=>`
+        <tr>
+          <td>${toISODate(parseFechaFlexible(r.fecha)||new Date())}</td>
+          <td>${r.entrada||'--'}</td>
+          <td>${r.salida||'--'}</td>
+          <td class="${r.estado==='en progreso'?'status-active':'status-inactive'}">${r.estado==='en progreso'?'En Progreso':'Completadas'}</td>
+          <td>${calcularDuracion(r.entrada,r.salida)}</td>
+        </tr>`).join('');
+      document.getElementById('activity-content').innerHTML=`<table class="activity-table"><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Estado</th><th>Duración</th></tr></thead><tbody>${rows}</tbody></table>`;
+    };
+
+    const exportCSV=(registros)=>{
+      const header=['fecha','entrada','salida','estado'];
+      const lines=[header.join(',')].concat(
+        registros.map(r=>[toISODate(parseFechaFlexible(r.fecha)||new Date()),r.entrada||'',r.salida||'',r.estado].map(v=>`"${(v||'').toString().replace(/"/g,'\"')}"`).join(','))
+      );
+      const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=`registros_${Date.now()}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const render=()=>{
+      const todos=getRegistros();
+      const filtrados=todos; // mostramos todos
+      createCharts(filtrados);
+      showRecentActivity(filtrados);
+    };
+
+    window.addEventListener('DOMContentLoaded',()=>{
+      render();
+      document.getElementById('btnFiltrar').addEventListener('click',render);
+      document.getElementById('btnLimpiar').addEventListener('click',()=>{
+        document.getElementById('desde').value='';
+        document.getElementById('hasta').value='';
+        render();
+      });
+      document.getElementById('btnExport').addEventListener('click',()=>{ exportCSV(getRegistros()); });
+    });
+  </script>
+</body>
+</html>
+

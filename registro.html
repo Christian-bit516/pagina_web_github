@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Registro - Sistema de Reconocimiento Facial</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    body {
+      min-height: 100vh;
+      background: radial-gradient(circle at center, #000 0%, #001a1f 100%);
+      color: #00e6ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Fondo animado en movimiento */
+    body::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: linear-gradient(270deg, #00d9ff, #0099ff, #00e6ff, #00bfff);
+      background-size: 600% 600%;
+      animation: fondoAnimado 18s ease infinite;
+      opacity: 0.15;
+      z-index: 0;
+    }
+
+    @keyframes fondoAnimado {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .glass-effect {
+      position: relative;
+      background: rgba(0, 20, 25, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 230, 255, 0.4);
+      border-radius: 20px;
+      box-shadow: 0 0 20px rgba(0, 230, 255, 0.6),
+                  inset 0 0 10px rgba(0, 230, 255, 0.3);
+      z-index: 1;
+    }
+
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { transform: scale(1); filter: drop-shadow(0 0 5px #00e6ff);}
+      50% { transform: scale(1.05); filter: drop-shadow(0 0 15px #00e6ff);}
+    }
+
+    input {
+      background: rgba(0, 20, 25, 0.7) !important;
+      border: 1px solid rgba(0, 230, 255, 0.4) !important;
+      color: #00e6ff !important;
+    }
+    input::placeholder {
+      color: #00e6ff80;
+    }
+
+    button {
+      background: linear-gradient(90deg, #00d9ff, #0099ff);
+      color: #000 !important;
+      text-shadow: 0 0 5px #00e6ff;
+      box-shadow: 0 0 15px #00e6ff;
+    }
+    button:hover {
+      background: linear-gradient(90deg, #0099ff, #00d9ff);
+      box-shadow: 0 0 25px #00e6ff, 0 0 50px #00d9ff;
+    }
+
+    .success-message {
+      background: rgba(0, 230, 255, 0.9);
+      color: #000;
+      text-shadow: 0 0 3px #00e6ff;
+      box-shadow: 0 0 10px #00e6ff;
+    }
+
+    .error-message {
+      background: rgba(255, 0, 80, 0.9);
+      text-shadow: 0 0 3px #ff0040;
+      box-shadow: 0 0 10px #ff0040;
+    }
+  </style>
+</head>
+<body>
+  <div class="glass-effect w-full max-w-md p-8">
+    <!-- Logo/Header -->
+    <div class="text-center mb-8">
+      <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-black/40 flex items-center justify-center pulse border border-[#00e6ff]">
+        <svg class="w-10 h-10 text-[#00e6ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+        </svg>
+      </div>
+      <h1 class="text-3xl font-bold text-[#00e6ff] mb-2">Registro de Usuario</h1>
+      <p class="text-[#00e6ff]/70">Ingresa tu nombre para acceder al sistema de reconocimiento facial</p>
+    </div>
+
+    <!-- Formulario -->
+    <form id="registroForm" class="space-y-6">
+      <div>
+        <label for="nombre" class="block text-sm font-medium text-[#00e6ff] mb-2">Nombre Completo</label>
+        <input 
+          type="text" 
+          id="nombre" 
+          required
+          class="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00e6ff] transition-all duration-200"
+          placeholder="Ej: Neo Anderson"
+          autocomplete="off"
+        >
+        <p class="text-[#00e6ff]/60 text-xs mt-1">* Este nombre se usará para personalizar tu experiencia</p>
+      </div>
+
+      <button type="submit"
+        class="w-full py-3 px-6 rounded-lg font-semibold transform hover:scale-105 transition-all duration-200 flex items-center justify-center space-x-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        <span>Continuar al Reconocimiento Facial</span>
+      </button>
+    </form>
+
+    <!-- Info -->
+    <div class="mt-8 p-4 bg-black/40 rounded-lg border border-[#00e6ff]/40">
+      <h3 class="text-[#00e6ff] font-semibold mb-2 flex items-center">
+        <svg class="w-4 h-4 mr-2 text-[#00e6ff]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Información importante
+      </h3>
+      <p class="text-[#00e6ff]/80 text-sm">
+        Tu nombre se guardará localmente en tu navegador para personalizar la experiencia. 
+        No se comparte con terceros.
+      </p>
+    </div>
+  </div>
+  
+  <!-- Script igual que tuyo -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('registroForm');
+      const nombreInput = document.getElementById('nombre');
+
+      const nombreGuardado = localStorage.getItem('usuarioNombre');
+      if (nombreGuardado) {
+        nombreInput.value = nombreGuardado;
+      }
+
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const nombre = nombreInput.value.trim();
+
+        if (!nombre) {
+          mostrarError('Por favor, ingresa tu nombre');
+          return;
+        }
+
+        if (nombre.length < 2) {
+          mostrarError('El nombre debe tener al menos 2 caracteres');
+          return;
+        }
+
+        localStorage.setItem('usuarioNombre', nombre);
+        mostrarExito(`¡Bienvenido/a ${nombre}! Redirigiendo...`);
+
+        setTimeout(() => {
+          window.location.href = 'index.html';
+        }, 1500);
+      });
+
+      function mostrarError(mensaje) {
+        document.querySelectorAll('.error-message,.success-message').forEach(msg => msg.remove());
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = mensaje;
+        errorDiv.style.padding = '10px';
+        errorDiv.style.borderRadius = '8px';
+        errorDiv.style.marginTop = '15px';
+        errorDiv.style.animation = 'fadeInUp 0.5s ease';
+        form.appendChild(errorDiv);
+
+        nombreInput.style.animation = 'shake 0.5s ease';
+        setTimeout(() => { nombreInput.style.animation = ''; }, 500);
+      }
+
+      function mostrarExito(mensaje) {
+        document.querySelectorAll('.error-message,.success-message').forEach(msg => msg.remove());
+        const exitoDiv = document.createElement('div');
+        exitoDiv.className = 'success-message';
+        exitoDiv.textContent = mensaje;
+        exitoDiv.style.padding = '10px';
+        exitoDiv.style.borderRadius = '8px';
+        exitoDiv.style.marginTop = '15px';
+        exitoDiv.style.animation = 'fadeInUp 0.5s ease';
+        form.appendChild(exitoDiv);
+      }
+
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
+        }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(20px);}
+          to { opacity: 1; transform: translateY(0);}
+        }
+      `;
+      document.head.appendChild(style);
+    });
+  </script>
+</body>
+</html>
+
+
